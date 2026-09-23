@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -7,7 +8,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
-const binary = join(project, 'native', 'codex.exe');
+// A release package keeps the patched Codex in bin\ (the official package layout); the
+// repository keeps it in native\.
+const packaged = join(project, 'bin', 'codex.exe');
+const binary = existsSync(packaged) ? packaged : join(project, 'native', 'codex.exe');
 const bridge = process.env.MAGICODEX_BRIDGE_ROOT || join(homedir(), '.codex', 'copilot-proxy');
 const load = name => import(pathToFileURL(join(bridge, 'src', name)).href);
 const { isInformationRequest, validateCliArgs } = await load('arguments.mjs');

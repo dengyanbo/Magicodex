@@ -1,4 +1,7 @@
 /target/
+/copilot/target/
+/copilot/vendor/
+/dist/
 /magicodex.exe
 *.log
 /.venv/

@@ -1,4 +1,48 @@
-# Magicodex 原生 TUI 补丁
+# Magicodex：终端里的魔法阵
+
+把动漫里施法的魔法阵放进 AI 编程终端：输入前是一个小法阵；提交 prompt 后法阵随等待逐层变大、变复杂，prompt 和中间回复环绕法阵；最终回复像魔法生效一样从法阵下方释放出来。10 种法阵（经典、风、火、水、雷、土、神圣、黑暗、诡异、科技）的外形、运动和文字路径各不相同，用 `/magic list` 预览选择。
+
+| 版本 | 适用于 | 做法 | 安装后的命令 | 说明 |
+| --- | --- | --- | --- | --- |
+| **codex** | OpenAI Codex CLI 0.153.4 | 原生 TUI 补丁：修改 Codex 源码后重新构建，界面就是原版 Codex | `magicodex`、`magicodex-bridge` | [下文](#codex-原生-tui-补丁) |
+| **copilot** | GitHub Copilot CLI（验证于 1.0.87） | 外壳：运行你安装的、未修改的 Copilot CLI，在它上方画法阵 | `magicopilot` | [copilot/README.md](copilot/README.md) |
+| **standalone** | Codex app-server | 最早的独立前端，自绘整套界面，只有一种法阵 | `magicodex-standalone` | [README-standalone.md](README-standalone.md) |
+
+Copilot CLI 的许可证不允许修改或制作衍生作品，所以 Copilot 版不是补丁，而是外壳。两种做法都不改变原程序的快捷键、命令和默认 prompt，`/magic` 命令都只在本机处理、不发给模型。
+
+![magicopilot：Copilot CLI 上方的待机小阵、中间回复环绕、最终回复向下释放、类型选择器](docs/images/magicopilot.png)
+
+## 安装发布版
+
+每个版本是一个独立的 GitHub Release（标签 `codex-v*`、`copilot-v*`、`standalone-v*`），附 zip、`SHA256SUMS.txt` 和 `install.ps1`。用 `install.ps1` 选择要安装的版本：
+
+```powershell
+# 仓库目前是私有的：需要已登录的 GitHub CLI（gh auth login）
+gh release download copilot-v0.1.0 --repo dengyanbo/Magicodex --pattern install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1                  # 交互式选择
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Variant copilot -AddToPath
+```
+
+| 参数 | 作用 |
+| --- | --- |
+| `-Variant codex\|copilot\|standalone` | 要安装的版本类型；不写则列出菜单选择 |
+| `-Version <x.y.z>` | 指定版本号；默认最新（优先正式版，没有正式版时用预发布） |
+| `-List` | 列出可安装的发布与已安装的版本 |
+| `-AddToPath` | 把命令目录加入用户 PATH；不加则不改 PATH |
+| `-Uninstall -Variant <类型>` | 卸载该类型；只删除安装器自己装的版本目录、状态文件和命令入口，不认识的内容原样保留；程序正在运行时拒绝卸载、不做任何改动；最后一个版本卸载后同时移除 PATH 项和空的安装目录 |
+| `-InstallDir <目录>` | 安装位置，默认 `%LOCALAPPDATA%\Magicodex`；相对路径以当前 PowerShell 位置为准 |
+| `-Source <目录>` | 从已下载的 zip + `SHA256SUMS.txt` 安装，不访问网络 |
+| `-Force` | 重新下载并解压已安装的版本；新包校验、解压成功后才替换旧的；程序正在运行时拒绝替换 |
+
+安装器先按 `SHA256SUMS.txt` 校验 zip，再解压到 `<安装目录>\<类型>\<版本>`，命令入口是 `<安装目录>\bin\*.cmd`。同一类型安装新版本时，入口切换到新版本并删除旧版本目录（只删带有该类型 `magicodex-package.json` 的目录）；旧版本的程序仍在运行时，它的目录原样保留，下次安装或卸载时再删。支持 Windows PowerShell 5.1 与 PowerShell 7；也可以直接解压 zip 使用。
+
+发布包由 `scripts\New-Release.ps1` 生成（加 `-Publish` 才创建 GitHub Release）。Codex 包沿用官方 npm 包 `@openai/codex-win32-x64` 的目录布局（`bin\`、`codex-resources\`、`codex-path\`、`codex-package.json`），只替换 `bin\codex.exe`，因此沙箱辅助程序和内置 ripgrep 照常可用。Copilot 包附带微软官方 NuGet 包中的 `conpty.dll`/`OpenConsole.exe`（MIT，微软签名，未修改）。
+
+## GitHub Copilot CLI 版（magicopilot）
+
+用 `magicopilot` 代替 `copilot` 启动（其余参数原样传给 copilot），在 Copilot 输入框里输入 `/magic list`、`/magic on`、`/magic off`、`/magic 火` 等；命令由外壳在回车时截获，不发给模型。法阵默认开启，占用顶部 5–24 行，Copilot 至少保留 14 行。工作方式、参数、限制与验证记录见 [copilot/README.md](copilot/README.md)。
+
+## Codex 原生 TUI 补丁
 
 基于官方 **Codex 0.153.4** 的非官方 UI 补丁。沿用 Codex 自己的输入框、快捷键、命令菜单、历史记录、审批和默认提示；魔法阵不是另一个仿 Codex 的终端界面。
 
@@ -10,11 +54,11 @@
 
 ## Git 仓库范围
 
-仓库包含项目源码、修改后的上游源码、补丁及构建脚本，保留上游许可证与声明；不提交 EXE、依赖缓存、源码 ZIP、用户配置或数据库。克隆后需按下文构建，Git 仓库本身不包含本地已生成的二进制。许可证范围见 `LICENSE` 和 `NOTICE`。
+仓库包含项目源码（根目录独立前端、`copilot\` 外壳）、修改后的上游源码、补丁、打包与构建脚本，保留上游许可证与声明；不提交 EXE、依赖缓存、源码 ZIP、用户配置或数据库。克隆后需按下文构建，Git 仓库本身不包含本地已生成的二进制。许可证范围见 `LICENSE` 和 `NOTICE`。
 
 ## 使用原生版
 
-先完成原生构建和发布，再在 Windows Terminal 中运行：
+安装发布版后直接运行 `magicodex`（官方入口）或 `magicodex-bridge`（Copilot 桥接），与下面两个脚本相同。从源码使用时，先完成原生构建和发布，再在 Windows Terminal 中运行：
 
 ```powershell
 # 沿用原有 Copilot 桥接与 profile

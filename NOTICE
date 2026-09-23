@@ -13,5 +13,12 @@ derived from OpenAI Codex. These patches are distributed under the
 Apache License, Version 2.0, provided in
 upstream/codex-rust-v0.153.4/LICENSE.
 
+The copilot directory (magicopilot, the GitHub Copilot CLI wrapper) is
+licensed under the MIT license in LICENSE. magicopilot does not contain,
+modify or redistribute GitHub Copilot CLI; it starts the copy the user
+installed. Its release package also contains conpty.dll and OpenConsole.exe,
+unmodified from Microsoft's Microsoft.Windows.Console.ConPTY NuGet package
+(MIT); see packaging/conpty-NOTICE.md.
+
 Magicodex is an unofficial UI modification and is not an official OpenAI
-Codex release.
+Codex release, nor a GitHub product.
