@@ -99,7 +99,7 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
 
 原生测试按上游规则通过 `just test` / nextest 运行。UI 变化使用 insta snapshots；默认关闭效果时，原组件的既有快照不应因魔法阵而改变。
 
-源码以发布归档形式保存，没有 Git 索引。上游 `just fmt` 的全仓库入口会因此无法枚举 Bazel 文件；这种情况下只对改动的 Rust crate 使用同一 Rust 格式化流程，不声称已检查未改动的 Python/Bazel 文件。
+初次开发时使用无 Git 索引的发布归档，上游 `just fmt` 因无法枚举 Bazel 文件而未能运行，当时仅对改动的 Rust crate 执行了格式化，没有将其宣称为全仓库格式化通过。现在源码已纳入 Git；克隆本仓库后，可在准备好 `dotslash`、`uv` 等上游格式化依赖后使用完整入口。
 
 本机归档的 Rust 格式化替代命令：`.\scripts\Build-Native.ps1 -Action FormatRust`。
 
