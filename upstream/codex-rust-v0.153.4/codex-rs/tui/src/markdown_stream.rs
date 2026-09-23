@@ -100,6 +100,11 @@ impl MarkdownStreamCollector {
         &self.buffer[..self.committed_source_len]
     }
 
+    /// Incomplete text for an opt-in provisional display; never advances the commit boundary.
+    pub(crate) fn pending_source(&self) -> &str {
+        &self.buffer[self.committed_source_len..]
+    }
+
     /// Finalize the stream and transfer its complete raw source.
     ///
     /// Ensures the returned source chunk is newline-terminated when non-empty so callers can

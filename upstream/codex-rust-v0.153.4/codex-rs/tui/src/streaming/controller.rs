@@ -553,6 +553,39 @@ impl StreamController {
         self.core.current_tail_lines()
     }
 
+    /// Preview the uncommitted answer below a magic outlet without changing stable markdown.
+    ///
+    /// Tables keep native newline holdback. Other incomplete lines are provisional plain text
+    /// whose newest graphemes take the `[warm, hot]` glow styles; completion still uses the
+    /// authoritative markdown source for consolidation.
+    pub(crate) fn magic_tail_lines(&self, glow: [ratatui::style::Style; 2]) -> Vec<HyperlinkLine> {
+        if !self.magic_preview_available() {
+            return self.current_tail_lines();
+        }
+        let mut lines = self.core.render.lines[self.core.emitted_stable_len..].to_vec();
+        let pending = self.core.state.collector.pending_source();
+        if !pending.is_empty() {
+            let text = history_cell::sanitize_user_text(pending.into()).into_owned();
+            lines.push(HyperlinkLine::new(crate::magic_output::glowing_tail(
+                text, glow,
+            )));
+        }
+        lines
+    }
+
+    pub(crate) fn magic_tail_starts_stream(&self) -> bool {
+        if self.magic_preview_available() {
+            !self.header_emitted
+        } else {
+            self.tail_starts_stream()
+        }
+    }
+
+    fn magic_preview_available(&self) -> bool {
+        matches!(self.core.holdback_scanner.state(), TableHoldbackState::None)
+            && !self.core.state.collector.pending_source().contains('|')
+    }
+
     #[inline]
     pub(crate) fn tail_starts_stream(&self) -> bool {
         !self.header_emitted && self.core.enqueued_stable_len == 0

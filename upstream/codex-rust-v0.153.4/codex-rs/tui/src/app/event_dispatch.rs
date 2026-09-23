@@ -213,6 +213,20 @@ impl App {
             AppEvent::RawOutputModeChanged { enabled } => {
                 self.apply_raw_output_mode(tui, enabled, /*notify*/ false);
             }
+            AppEvent::MagicDisplayChanged => {
+                let width = tui.terminal.last_known_screen_size.into();
+                if let Err(err) = self.reflow_transcript_now(tui, width) {
+                    self.chat_widget
+                        .add_error_message(format!("Failed to redraw magic output: {err}"));
+                }
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::MagicStylePreviewed => {
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::MagicStyleSelected(style) => {
+                self.chat_widget.apply_magic_style(style);
+            }
             AppEvent::ClearUiAndSubmitUserMessage { text } => {
                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
                 self.reset_app_ui_state_after_clear();

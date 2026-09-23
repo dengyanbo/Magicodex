@@ -71,6 +71,7 @@ impl ChatWidget {
     // Raw reasoning uses the same flow as summarized reasoning
 
     pub(super) fn on_task_started(&mut self) {
+        self.magic_output = crate::magic_output::MagicOutput::default();
         self.magic_circle.begin(Instant::now());
         self.input_queue.user_turn_pending_start = false;
         self.reset_safety_buffering_for_turn_start();
@@ -318,6 +319,9 @@ impl ChatWidget {
     /// and should continue to drive the bottom-pane running indicator while it is in progress.
     pub(super) fn finalize_turn(&mut self) {
         self.clear_safety_buffering();
+        if self.magic_output.emitted || !self.magic_output.pending_notices.is_empty() {
+            self.flush_answer_stream_with_separator();
+        }
         // Drop preview-only stream tail content on any termination path before
         // failed-cell finalization, so transient tail cells are never persisted.
         self.clear_active_stream_tail();

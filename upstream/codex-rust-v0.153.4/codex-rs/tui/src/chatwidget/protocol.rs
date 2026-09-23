@@ -355,6 +355,10 @@ impl ChatWidget {
         from_replay: bool,
     ) {
         match notification.item {
+            ThreadItem::AgentMessage { phase, .. } if !from_replay => {
+                self.magic_output.phase = phase;
+                self.magic_output.message_started = false;
+            }
             item @ ThreadItem::CommandExecution { .. } => self.on_command_execution_started(item),
             ThreadItem::FileChange { id: _, changes, .. } => {
                 self.on_patch_apply_begin(file_update_changes_to_display(changes));

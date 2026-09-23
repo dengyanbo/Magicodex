@@ -779,7 +779,7 @@ impl App {
         initial_user_message: Option<crate::chatwidget::UserMessage>,
     ) -> crate::chatwidget::ChatWidgetInit {
         crate::chatwidget::ChatWidgetInit {
-            magic_enabled: self.chat_widget.magic_enabled.clone(),
+            magic: self.chat_widget.magic.clone(),
             config: cfg,
             frame_requester: tui.frame_requester(),
             app_event_tx: self.app_event_tx.clone(),

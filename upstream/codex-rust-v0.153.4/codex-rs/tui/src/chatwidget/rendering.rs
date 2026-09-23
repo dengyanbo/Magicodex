@@ -68,15 +68,14 @@ impl ChatWidget {
                 })),
             );
         }
-        if self
-            .magic_enabled
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
+        if self.magic.enabled() && !self.magic_output.emitted {
             flex.push(
                 /*flex*/ 1,
                 RenderableItem::Owned(Box::new(crate::magic_circle::MagicView {
                     circle: &self.magic_circle,
+                    style: self.magic.style(),
                     animations_enabled: self.config.animations,
+                    scene: crate::magic_circle::MagicScene::Live,
                 })),
             );
         }
@@ -200,9 +199,8 @@ impl Renderable for ChatWidget {
     fn render(&self, area: Rect, buf: &mut Buffer) {
         self.as_renderable().render(area, buf);
         self.note_rendered_width(area.width);
-        if self
-            .magic_enabled
-            .load(std::sync::atomic::Ordering::Relaxed)
+        if self.magic.enabled()
+            && !self.magic_output.emitted
             && self.magic_circle.is_active()
             && self.config.animations
         {

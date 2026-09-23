@@ -504,7 +504,7 @@ const DEFAULT_STATUS_LINE_ITEMS: [&str; 2] = ["model-with-reasoning", "current-d
 
 /// Common initialization parameters shared by all `ChatWidget` constructors.
 pub(crate) struct ChatWidgetInit {
-    pub(crate) magic_enabled: Arc<AtomicBool>,
+    pub(crate) magic: crate::magic_style::MagicSettings,
     pub(crate) config: Config,
     pub(crate) frame_requester: FrameRequester,
     pub(crate) app_event_tx: AppEventSender,
@@ -553,8 +553,9 @@ pub(crate) enum ExternalEditorState {
 /// (which view gets Ctrl+C), while `ChatWidget` owns process-level decisions such as interrupting
 /// active work, arming the double-press quit shortcut, and requesting shutdown-first exit.
 pub(crate) struct ChatWidget {
-    pub(crate) magic_enabled: Arc<AtomicBool>,
+    pub(crate) magic: crate::magic_style::MagicSettings,
     magic_circle: crate::magic_circle::MagicCircle,
+    magic_output: crate::magic_output::MagicOutput,
     app_event_tx: AppEventSender,
     codex_op_target: CodexOpTarget,
     bottom_pane: BottomPane,

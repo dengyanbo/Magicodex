@@ -15,6 +15,7 @@ import time
 import pyte
 import psutil
 from winpty import Backend, PtyProcess
+from wcwidth import wcswidth
 
 
 class Fixture(BaseHTTPRequestHandler):
@@ -22,6 +23,7 @@ class Fixture(BaseHTTPRequestHandler):
     requests = []
     primary_requests = []
     first_text = threading.Event()
+    release_final = threading.Event()
 
     def log_message(self, *_args):
         pass
@@ -92,12 +94,21 @@ class Fixture(BaseHTTPRequestHandler):
                 return "Native fixture"
             texts = [("final_answer", json.dumps(example(schema)))]
         for index, (phase, text) in enumerate(texts):
+            pouring = number == 2 and phase == "final_answer" and not auxiliary
+            if pouring:
+                text = "POUR_FIRST_青蓝星环 · NATIVE_RESPONSE_2"
             item = {"id": f"msg_{number}_{index}", "type": "message", "role": "assistant",
                     "phase": phase, "status": "in_progress", "content": []}
             emit("response.output_item.added", output_index=index, item=item)
             part = {"type": "output_text", "text": "", "annotations": []}
             emit("response.content_part.added", item_id=item["id"], output_index=index, content_index=0, part=part)
-            emit("response.output_text.delta", item_id=item["id"], output_index=index, content_index=0, delta=text)
+            first_chunk = "POUR_FIRST_青蓝星环" if pouring else text
+            emit("response.output_text.delta", item_id=item["id"], output_index=index, content_index=0, delta=first_chunk)
+            if pouring:
+                if not self.release_final.wait(20):
+                    raise AssertionError("Terminal never observed the partial downward answer")
+                emit("response.output_text.delta", item_id=item["id"], output_index=index,
+                     content_index=0, delta=text[len(first_chunk):])
             if number == 2 and index == 0 and not auxiliary:
                 self.first_text.set()
                 time.sleep(3)
@@ -127,6 +138,7 @@ class NativeTerminal:
         self.process_info = psutil.Process(self.process.pid)
         self.screen.write_process_input = self.process.write
         self.stream = pyte.Stream(self.screen)
+        self.last_output = time.monotonic()
         self.reader = threading.Thread(target=self.read, daemon=True)
         self.reader.start()
 
@@ -137,12 +149,33 @@ class NativeTerminal:
                 with self.lock:
                     self.capture.append(chunk)
                     self.stream.feed(chunk)
+                    self.last_output = time.monotonic()
         except EOFError:
             pass
 
+    def settle(self):
+        # pyte ignores synchronized output, so wait for a quiet gap instead of reading half a frame.
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() - self.last_output < 0.03 and time.monotonic() < deadline:
+            time.sleep(0.005)
+
     def text(self):
+        self.settle()
         with self.lock:
-            return "\n".join(self.screen.display)
+            return "\n".join(self.display_rows())
+
+    def display_rows(self):
+        rows = []
+        for y in range(self.screen.lines):
+            row = []
+            x = 0
+            while x < self.screen.columns:
+                # pyte may retain an empty wide-character stub after a partial redraw.
+                text = self.screen.buffer[y][x].data or " "
+                row.append(text)
+                x += max(1, wcswidth(text))
+            rows.append("".join(row))
+        return rows
 
     def wait(self, text, timeout=30):
         deadline = time.monotonic() + timeout
@@ -154,6 +187,14 @@ class NativeTerminal:
                 raise AssertionError(f"Native process exited:\n{self.text()}")
             time.sleep(0.05)
         raise AssertionError(f"Missing {text!r}:\n{self.text()}")
+
+    def wait_absent(self, text, timeout=10):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if text not in self.text():
+                return
+            time.sleep(0.05)
+        raise AssertionError(f"Still showing {text!r}:\n{self.text()}")
 
     def submit(self, text):
         self.process.write("\x1b[200~" + text + "\x1b[201~")
@@ -177,8 +218,9 @@ class NativeTerminal:
         raise AssertionError(f"Local command did not complete: {command}\n{self.text()}")
 
     def extent(self):
+        self.settle()
         with self.lock:
-            dots = [(x, y) for y, line in enumerate(self.screen.display)
+            dots = [(x, y) for y, line in enumerate(self.display_rows())
                     for x, char in enumerate(line) if 28 <= x <= 92 and "\u2801" <= char <= "\u28ff"]
         if not dots:
             return (0, 0)
@@ -218,10 +260,20 @@ class NativeTerminal:
             psutil.wait_procs(children, timeout=5)
 
 
-def run(binary, baseline=False):
+def outlet_above(rows, needle):
+    """Return the answer row and the lowest row of the circle and light cone above it."""
+    answer = next(i for i, line in enumerate(rows) if needle in line)
+    braille = [i for i, line in enumerate(rows[:answer]) if any("\u2801" <= char <= "\u28ff" for char in line)]
+    assert len(braille) >= 8, "No magic outlet above the answer:\n" + "\n".join(rows)
+    assert answer - braille[-1] <= 3, "The light cone should lead directly into the answer:\n" + "\n".join(rows)
+    return answer, braille[-1]
+
+
+def run(binary, baseline=False, windows_terminal=False):
     Fixture.requests = []
     Fixture.primary_requests = []
     Fixture.first_text.clear()
+    Fixture.release_final.clear()
     server = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
@@ -255,8 +307,11 @@ trust_level = "trusted"
             (home / "config.toml").write_text(config, encoding="utf-8")
             env = dict(os.environ, CODEX_HOME=str(home), NO_PROXY="127.0.0.1,localhost,::1",
                        no_proxy="127.0.0.1,localhost,::1")
-            for key in ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_COPILOT_PROXY_TOKEN"]:
+            for key in ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_COPILOT_PROXY_TOKEN", "WT_SESSION"]:
                 env.pop(key, None)
+            if windows_terminal:
+                # Codex picks its Windows Terminal scrollback strategy from WT_SESSION.
+                env["WT_SESSION"] = "00000000-0000-4000-8000-000000000000"
             terminal = NativeTerminal(binary, env, work)
             try:
                 terminal.wait("Codex")
@@ -271,13 +326,18 @@ trust_level = "trusted"
                     print(json.dumps({"unmodified_native_fixture": "passed", "model_requests": 1}))
                     return
                 terminal.submit("/magic list")
-                terminal.wait("Concentric circles")
+                terminal.wait("Magic circle styles")
+                terminal.process.write("\x1b[B")
+                terminal.wait("› 2. wind 风")
+                terminal.process.write("\x1b")
+                terminal.wait_absent("Magic circle styles")
+                assert terminal.extent() == (0, 0), "Previewing a style must not turn the circle on"
                 assert len(Fixture.primary_requests) == 0, "Local command invoked a model"
                 prompt = "NATIVE_PROMPT_青蓝星环"
                 terminal.submit(prompt)
                 terminal.wait("NATIVE_RESPONSE_1")
                 terminal.submit("/magic on")
-                terminal.wait("Magic circle: on")
+                terminal.wait("Magic circle on")
                 idle = terminal.wait_extent(lambda size: size[0] > 0)
                 terminal.submit(prompt)
                 time.sleep(1)
@@ -287,16 +347,56 @@ trust_level = "trusted"
                 assert later[0] > early[0] >= idle[0], (idle, early, later)
                 assert later[1] > idle[1], (idle, early, later)
                 assert Fixture.first_text.wait(8), "No assistant reply"
-                terminal.wait("NATIVE_RESPONSE_2")
+                terminal.wait("POUR_FIRST_青蓝星环")
+                outlet_above(terminal.text().splitlines(), "POUR_FIRST_青蓝星环")
+                assert "NATIVE_RESPONSE_2" not in terminal.text(), "Only the first chunk should exist yet"
                 terminal.submit("/magic off")
-                terminal.wait("Magic circle: off")
                 terminal.wait_extent(lambda size: size == (0, 0))
-                assert len(Fixture.primary_requests) == 2, "Magic commands reached inference"
-                assert Fixture.primary_requests[0]["instructions"] == Fixture.primary_requests[1]["instructions"], "Default instructions changed"
+                terminal.submit("/magic on")
+                terminal.wait("POUR_FIRST_青蓝星环")
+                with terminal.lock:
+                    terminal.screen.resize(lines=45, columns=90)
+                    terminal.process.setwinsize(45, 90)
+                time.sleep(0.5)
+                outlet_above(terminal.text().splitlines(), "POUR_FIRST_青蓝星环")
+                Fixture.release_final.set()
+                terminal.wait("NATIVE_RESPONSE_2")
+                time.sleep(0.3)
+                completed = terminal.text().splitlines()
+                answer_row, _ = outlet_above(completed, "POUR_FIRST_青蓝星环")
+                assert sum("POUR_FIRST_青蓝星环" in line for line in completed) == 1, "Provisional answer was duplicated"
+                assert not any("\u2801" <= char <= "\u28ff"
+                               for line in completed[answer_row + 1:] for char in line[28:93]), "A new circle appeared below the answer"
+                terminal.submit("/magic off")
+                terminal.wait("Magic circle off")
+                terminal.wait_extent(lambda size: size == (0, 0))
+                terminal.submit("/magic list")
+                terminal.wait("Magic circle styles")
+                terminal.process.write("\x1b[B\x1b[B")
+                terminal.wait("› 3. fire 火")
+                terminal.process.write("\r")
+                terminal.wait("Magic circle on · fire 火")
+                terminal.wait_extent(lambda size: size[0] > 0)
+                terminal.submit(prompt)
+                terminal.wait("NATIVE_RESPONSE_3")
+                time.sleep(0.3)
+                outlet_above(terminal.text().splitlines(), "NATIVE_RESPONSE_3")
+                terminal.submit("/magic 雷")
+                terminal.wait("Magic circle on · thunder 雷")
+                terminal.submit("/magic off")
+                terminal.wait("Magic circle off · thunder 雷")
+                terminal.wait_extent(lambda size: size == (0, 0))
+                assert len(Fixture.primary_requests) == 3, "Magic commands reached inference"
+                assert all(request["instructions"] == Fixture.primary_requests[0]["instructions"]
+                           for request in Fixture.primary_requests), "Default instructions changed"
                 assert all("/magic " not in json.dumps(body) for body in Fixture.requests)
                 print(json.dumps({"native_commands": "passed", "growth": [idle, early, later],
-                                  "model_requests": 2, "default_instructions_unchanged": True}))
+                                  "model_requests": 3, "default_instructions_unchanged": True,
+                                  "style_picker_preview_cancel_select": True, "styled_outlet": "fire",
+                                  "partial_and_complete_reply_below_outlet": True,
+                                  "stream_toggle_and_resize": True}))
             finally:
+                Fixture.release_final.set()
                 terminal.close()
     finally:
         server.shutdown()
@@ -330,7 +430,7 @@ def live_bridge(project):
                 time.sleep(0.1)
             else:
                 raise AssertionError("Native composer was not ready; no unrecognized prompt was accepted:\n" + terminal.text())
-            terminal.control("/magic on", "Magic circle: on")
+            terminal.control("/magic on", "Magic circle on")
             terminal.wait_extent(lambda size: size[0] > 0)
             terminal.submit("Do not use tools. Reply only NATIVE_BRIDGE_READY_731.")
             deadline = time.monotonic() + 120
@@ -342,7 +442,7 @@ def live_bridge(project):
             else:
                 raise AssertionError("No actual assistant response from the native bridge:\n" + terminal.text())
             time.sleep(1)
-            terminal.control("/magic off", "Magic circle: off")
+            terminal.control("/magic off", "Magic circle off")
             terminal.wait_extent(lambda size: size == (0, 0))
             print(json.dumps({"native_copilot_bridge": "passed", "magic_on_off": "passed"}))
         finally:
@@ -354,8 +454,10 @@ if __name__ == "__main__":
     parser.add_argument("binary", type=Path)
     parser.add_argument("--baseline", action="store_true")
     parser.add_argument("--live-bridge", action="store_true")
+    parser.add_argument("--windows-terminal", action="store_true",
+                        help="Exercise the Windows Terminal scrollback strategy (WT_SESSION)")
     args = parser.parse_args()
     if args.live_bridge:
         live_bridge(args.binary.resolve())
     else:
-        run(args.binary.resolve(), args.baseline)
+        run(args.binary.resolve(), args.baseline, args.windows_terminal)

@@ -561,7 +561,7 @@ async fn enqueue_primary_thread_session_replays_turns_before_initial_prompt_subm
     let config = app.config.clone();
     let model = get_model_offline_for_tests(config.model.as_deref());
     app.chat_widget = ChatWidget::new_with_app_event(ChatWidgetInit {
-        magic_enabled: app.chat_widget.magic_enabled.clone(),
+        magic: app.chat_widget.magic.clone(),
         config,
         frame_requester: crate::tui::FrameRequester::test_dummy(),
         app_event_tx: app.app_event_tx.clone(),
@@ -7605,7 +7605,7 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
     );
 
     let replacement = ChatWidget::new_with_app_event(ChatWidgetInit {
-        magic_enabled: app.chat_widget.magic_enabled.clone(),
+        magic: app.chat_widget.magic.clone(),
         config: app.config.clone(),
         frame_requester: crate::tui::FrameRequester::test_dummy(),
         app_event_tx: app.app_event_tx.clone(),

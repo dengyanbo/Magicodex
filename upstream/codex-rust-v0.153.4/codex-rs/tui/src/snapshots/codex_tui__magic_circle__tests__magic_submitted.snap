@@ -1,19 +1,21 @@
 ---
 source: tui/src/magic_circle_tests.rs
-expression: "snapshot(&circle, now)"
+expression: "snapshot(&circle, now + Duration::from_millis(700))"
 ---
 
 
 
 
-
-
-
-                                   ⣠⠔c⠉o⠉n⠙s⣄
-                                 ⢀l ⢀⡿⠲⢶⡶⠖⢿⡀t⠳e
-                                 l ⢠⣋⡷⠚⠁⠈⠓⢾⣙⡄ ⢹
-                                 a⠴⣿⡁⡇    ⢸⢈⣿⠦⢸C
-                                 m ⠘⣍⡷⢤⡀⢀⡤⢾⣩⠃ r
-                                 ⠘s⡀⠈⣷⠴⠾⠷⠦⣾⠁⢀⡴e
-                                    ⠢⣄⣀⣀⣀⣀⣠⠴a
-                                     a  ⠁e t
+                                     ⣀⣀⣀⣀⣀
+                                 ⡠⠔⠊⠉   Cr⠉⠑⠢⢄
+                              ⢀⡴⠋      ⣀⣀eate ⠙⢦⡀
+                             ⢠⠊   ⣠⠔     ⠈⠑⠢⣀a s⠑⡄
+                            ⢠⠃  ⢀⡞⠁         ⠈⢳⡀m ⠘⡄
+                            ⡎   ⡼             ⢣ a ⢱
+                            ⡇   ⡇      ⠒      ⢸ l ⢸
+                            ⢇   ⢣             ⡜ l ⡸
+                            ⠘⡄  ⠈⢣⡀         ⢀⡼⠁c ⢠⠃
+                             ⠘⢄   ⠉⠢⣀⡀   ⢀⡠⠔⠋sno⡠⠃
+                              ⠈⠳⣄    ⠈⠉⠉⠉allet⣠⠞⠁
+                                 ⠑⠢⢄⣀   it⣀⡠⠔⠊
+                                     ⠉⠉⠉⠉⠉

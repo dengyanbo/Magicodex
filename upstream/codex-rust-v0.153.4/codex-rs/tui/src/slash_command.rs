@@ -88,7 +88,7 @@ impl SlashCommand {
     /// User-visible description shown in the popup.
     pub fn description(self) -> &'static str {
         match self {
-            SlashCommand::Magic => "toggle the magic circle: on, off, or list",
+            SlashCommand::Magic => "magic circle: on, off, list (pick a style), or a style name",
             SlashCommand::Feedback => "send logs to maintainers",
             SlashCommand::New => "start a new chat during a conversation",
             SlashCommand::Init => "create an AGENTS.md file with instructions for Codex",

@@ -26,7 +26,8 @@ impl ChatWidget {
     fn flush_answer_stream(&mut self, completed_message: Option<&str>) {
         let had_stream_controller = self.stream_controller.is_some();
         if let Some(mut controller) = self.stream_controller.take() {
-            let had_live_tail = controller.has_live_tail();
+            let had_live_tail = controller.has_live_tail()
+                || (self.magic_output.emitted && self.active_cell_is_stream_tail());
             self.clear_active_stream_tail();
             let (cell, streamed_source) = controller.finalize();
             let completed_message_differs = completed_message.is_some_and(|completed| {
@@ -78,6 +79,9 @@ impl ChatWidget {
                     deferred_history_cell,
                 });
             }
+        }
+        for notice in std::mem::take(&mut self.magic_output.pending_notices) {
+            self.add_boxed_history(notice);
         }
         self.adaptive_chunking.reset();
         if had_stream_controller && self.stream_controllers_idle() {
@@ -333,10 +337,12 @@ impl ChatWidget {
         }
         let parsed = parse_assistant_markdown(&message, self.config.cwd.as_path());
         if !from_replay {
+            self.magic_output.phase = item.phase.clone();
             self.magic_circle
                 .complete_reply(&parsed.visible_markdown, Instant::now());
         }
         self.finalize_completed_assistant_message(Some(parsed.visible_markdown.as_str()));
+        self.magic_output.message_started = false;
         if matches!(item.phase, Some(MessagePhase::FinalAnswer) | None)
             && !parsed.visible_markdown.is_empty()
         {
@@ -455,6 +461,7 @@ impl ChatWidget {
 
     #[inline]
     pub(super) fn handle_streaming_delta(&mut self, delta: String) {
+        let first_text = !self.magic_output.message_started && !delta.trim().is_empty();
         if !delta.is_empty() {
             self.mark_safety_buffering_agent_message_started();
         }
@@ -486,14 +493,18 @@ impl ChatWidget {
                 inline_visualization_context,
             ));
         }
+        if first_text {
+            self.prepare_magic_output();
+            self.magic_output.message_started = true;
+        }
         if let Some(controller) = self.stream_controller.as_mut()
             && controller.push(&delta)
         {
             self.app_event_tx.send(AppEvent::StartCommitAnimation);
             self.run_catch_up_commit_tick();
         }
-        // Unterminated source is buffered by the controller and cannot change the visible tail.
-        if delta.contains('\n') && self.sync_active_stream_tail() {
+        // Magic previews unterminated prose; native table holdback remains unchanged.
+        if (delta.contains('\n') || self.magic_output.emitted) && self.sync_active_stream_tail() {
             self.request_redraw();
         }
     }
@@ -512,7 +523,13 @@ impl ChatWidget {
 
     pub(super) fn sync_active_stream_tail(&mut self) -> bool {
         if let Some(controller) = self.stream_controller.as_ref() {
-            let tail_lines = controller.current_tail_lines();
+            let magic_preview =
+                self.magic_output.emitted && !self.raw_output_mode && self.magic.enabled();
+            let tail_lines = if magic_preview {
+                controller.magic_tail_lines(self.magic.style().palette().glow)
+            } else {
+                controller.current_tail_lines()
+            };
             if tail_lines.is_empty() {
                 return self.clear_active_stream_tail();
             }
@@ -520,7 +537,11 @@ impl ChatWidget {
             self.bottom_pane.hide_status_indicator();
             let cell = history_cell::StreamingAgentTailCell::new(
                 tail_lines,
-                controller.tail_starts_stream(),
+                if magic_preview {
+                    controller.magic_tail_starts_stream()
+                } else {
+                    controller.tail_starts_stream()
+                },
             );
             if self
                 .transcript

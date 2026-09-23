@@ -1,85 +1,103 @@
-//! Optional, presentation-only magic circle. No text from this module enters model context.
+//! Optional, presentation-only magic circles. No text from this module enters model context.
+//!
+//! A circle grows with waiting time and gains layers until the first assistant reply freezes
+//! it. This module owns that state and the scene layout; `magic_styles` draws each selectable
+//! style. The prompt and the latest public assistant text, never reasoning, are inscribed.
 
-use std::collections::VecDeque;
-use std::f64::consts::TAU;
 use std::time::Duration;
 use std::time::Instant;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
-use ratatui::style::Style;
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 use crate::history_cell::sanitize_user_text;
+use crate::magic_canvas::Canvas;
+use crate::magic_style::MagicStyle;
+use crate::magic_styles;
+use crate::magic_styles::Clock;
+use crate::magic_styles::Frame;
+use crate::magic_styles::LAYER_TIMES;
 use crate::render::renderable::Renderable;
 
-pub(crate) const STYLES: &[(&str, &str)] = &[("classic", "Concentric circles with orbiting text")];
-pub(crate) const USAGE: &str = "Usage: /magic on|off|list";
+pub(crate) const USAGE: &str = "Usage: /magic on|off|list|<style>";
+pub(crate) const CIRCLE_ROWS: u16 = 21;
+/// Rows below an outlet circle for the emission that leads into the answer.
+pub(crate) const OUTLET_ROWS: u16 = 3;
+const IDLE_ROWS: u16 = 5;
+const MAX_WIDTH: u16 = 99;
 const TEXT_LIMIT: usize = 192;
+const IDLE_RADIUS: f64 = 8.0;
+const START_RADIUS: f64 = 20.0;
+const MAX_RADIUS: f64 = 40.0;
+const GROWTH_SECONDS: f64 = 16.0;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct MagicCircle {
     started: Option<Instant>,
     first_reply: Option<Duration>,
     prompt: String,
-    current_reply: String,
-    completed_replies: VecDeque<String>,
+    /// Tail of the latest public assistant text.
+    reply: String,
+    reply_complete: bool,
 }
 
 #[derive(Debug, PartialEq)]
 struct Geometry {
     radius: f64,
-    rings: usize,
+    /// Layers unlocked beyond each style's base silhouette.
+    layers: usize,
 }
 
 impl MagicCircle {
     pub(crate) fn submit(&mut self, text: &str, now: Instant) {
         self.begin(now);
-        self.prompt = display_fragment(text);
+        self.prompt = display_text(text)
+            .graphemes(/*is_extended*/ true)
+            .take(TEXT_LIMIT)
+            .collect();
     }
 
     pub(crate) fn begin(&mut self, now: Instant) {
         if self.started.is_none() {
             self.started = Some(now);
             self.first_reply = None;
-            self.current_reply.clear();
-            self.completed_replies.clear();
+            self.reply.clear();
+            self.reply_complete = false;
         }
     }
 
     pub(crate) fn reply_delta(&mut self, delta: &str, now: Instant) {
-        if let Some(started) = self.started {
-            let fragment = display_fragment(delta);
-            if !fragment.trim().is_empty() {
-                self.first_reply
-                    .get_or_insert(now.saturating_duration_since(started));
-            }
-            self.current_reply.push_str(&fragment);
-            self.current_reply = self
-                .current_reply
-                .graphemes(/*is_extended*/ true)
-                .rev()
-                .take(TEXT_LIMIT)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
+        let Some(started) = self.started else {
+            return;
+        };
+        let fragment = display_text(delta);
+        let blank = fragment.trim().is_empty();
+        if !blank {
+            self.first_reply
+                .get_or_insert(now.saturating_duration_since(started));
         }
+        if self.reply_complete {
+            if blank {
+                return;
+            }
+            self.reply.clear();
+            self.reply_complete = false;
+        }
+        self.reply.push_str(&fragment);
+        self.reply = keep_tail(&self.reply);
     }
 
     pub(crate) fn complete_reply(&mut self, text: &str, now: Instant) {
-        if self.started.is_some() {
-            self.reply_delta(text, now);
-            let text = display_fragment(text);
-            if !text.trim().is_empty() {
-                self.completed_replies.push_back(text);
-                while self.completed_replies.len() > 2 {
-                    self.completed_replies.pop_front();
-                }
-            }
-            self.current_reply.clear();
+        let Some(started) = self.started else {
+            return;
+        };
+        let text = display_text(text);
+        if !text.trim().is_empty() {
+            self.first_reply
+                .get_or_insert(now.saturating_duration_since(started));
+            self.reply = keep_tail(&text);
+            self.reply_complete = true;
         }
     }
 
@@ -94,22 +112,24 @@ impl MagicCircle {
     fn geometry(&self, now: Instant) -> Geometry {
         let Some(started) = self.started else {
             return Geometry {
-                radius: 4.0,
-                rings: 1,
+                radius: IDLE_RADIUS,
+                layers: 0,
             };
         };
-        let age = self
+        let charge = self
             .first_reply
             .unwrap_or_else(|| now.saturating_duration_since(started))
             .as_secs_f64();
+        let growth = (charge / GROWTH_SECONDS).min(1.0);
         Geometry {
-            radius: (14.0 + age).min(40.0),
-            rings: 2 + (age / 4.0).floor().min(5.0) as usize,
+            radius: START_RADIUS + (MAX_RADIUS - START_RADIUS) * (1.0 - (1.0 - growth).powi(3)),
+            layers: LAYER_TIMES.iter().filter(|at| **at <= charge).count(),
         }
     }
 }
 
-fn display_fragment(text: &str) -> String {
+/// Single-line printable text without control characters or bidi overrides.
+fn display_text(text: &str) -> String {
     sanitize_user_text(text.into())
         .replace(['\n', '\r', '\t'], " ")
         .graphemes(/*is_extended*/ true)
@@ -118,13 +138,29 @@ fn display_fragment(text: &str) -> String {
                 .chars()
                 .any(|c| matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'))
         })
-        .take(TEXT_LIMIT)
         .collect()
+}
+
+fn keep_tail(text: &str) -> String {
+    let count = text.graphemes(/*is_extended*/ true).count();
+    text.graphemes(/*is_extended*/ true)
+        .skip(count.saturating_sub(TEXT_LIMIT))
+        .collect()
+}
+
+/// Where a circle is drawn: charging above the composer, or fixed in history as the outlet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MagicScene {
+    Live,
+    /// Settled drawing with the style's emission below it, leading into the answer.
+    Outlet,
 }
 
 pub(crate) struct MagicView<'a> {
     pub(crate) circle: &'a MagicCircle,
+    pub(crate) style: MagicStyle,
     pub(crate) animations_enabled: bool,
+    pub(crate) scene: MagicScene,
 }
 
 impl Renderable for MagicView<'_> {
@@ -132,9 +168,9 @@ impl Renderable for MagicView<'_> {
         if width < 16 {
             0
         } else if self.circle.is_active() {
-            21
+            CIRCLE_ROWS
         } else {
-            3
+            IDLE_ROWS
         }
     }
 
@@ -144,12 +180,16 @@ impl Renderable for MagicView<'_> {
 }
 
 impl MagicView<'_> {
-    fn render_at(&self, area: Rect, buf: &mut Buffer, now: Instant) {
-        if area.width < 8 || area.height < 3 {
+    pub(crate) fn render_at(&self, area: Rect, buf: &mut Buffer, now: Instant) {
+        let outlet = self.scene == MagicScene::Outlet;
+        let cone_rows = if outlet { OUTLET_ROWS } else { 0 };
+        // Odd sizes put the centre in the middle of a cell, so core glyphs and beams align.
+        let rows = odd(area.height.saturating_sub(cone_rows).min(CIRCLE_ROWS));
+        let width = odd(area.width.min(MAX_WIDTH));
+        if width < 7 || rows < 3 {
             return;
         }
-        let width = area.width.min(100);
-        let height = area.height.min(21);
+        let height = rows + cone_rows;
         let area = Rect::new(
             area.x + (area.width - width) / 2,
             area.y + (area.height - height) / 2,
@@ -159,112 +199,48 @@ impl MagicView<'_> {
         let geometry = self.circle.geometry(now);
         let radius = geometry
             .radius
-            .min(f64::from(height * 2 - 2))
+            .min(f64::from(rows * 2 - 2))
             .min(f64::from(width - 2));
-        let rotation = if self.animations_enabled {
-            self.circle.started.map_or(/*default*/ 0.0, |started| {
-                now.saturating_duration_since(started).as_secs_f64() * 0.3
-            })
+        let bottom = f64::from(rows * 4) - 1.0;
+        let center_y = if outlet {
+            bottom - radius
         } else {
-            0.0
+            bottom / 2.0
         };
-        let mut pixels = vec![0_u8; usize::from(width) * usize::from(height)];
-        let cx = (f64::from(width) * 2.0 - 1.0) / 2.0;
-        let cy = (f64::from(height) * 4.0 - 1.0) / 2.0;
-        let mut plot = |x: f64, y: f64| {
-            let x = (x + cx).round() as i32;
-            let y = (y + cy).round() as i32;
-            if x >= 0 && y >= 0 && x < i32::from(width) * 2 && y < i32::from(height) * 4 {
-                let bits = [[0, 3], [1, 4], [2, 5], [6, 7]];
-                pixels[(y as usize / 4) * usize::from(width) + x as usize / 2] |=
-                    1 << bits[y as usize % 4][x as usize % 2];
-            }
-        };
-        for ring in 0..geometry.rings {
-            let r = radius * (1.0 - ring as f64 * 0.72 / geometry.rings as f64);
-            for step in 0..240 {
-                let theta = f64::from(step) * TAU / 240.0 + rotation;
-                plot(r * theta.cos(), r * theta.sin());
-            }
-        }
-        if self.circle.is_active() {
-            for vertex in 0..geometry.rings * 2 + 2 {
-                let a = vertex as f64 * TAU / (geometry.rings * 2 + 2) as f64 + rotation;
-                let b = a + TAU * 2.0 / (geometry.rings * 2 + 2) as f64;
-                for step in 0..40 {
-                    let t = f64::from(step) / 40.0;
-                    plot(
-                        radius * 0.8 * (a.cos() * (1.0 - t) + b.cos() * t),
-                        radius * 0.8 * (a.sin() * (1.0 - t) + b.sin() * t),
-                    );
+        let palette = self.style.palette();
+        let mut canvas = Canvas::new(width, height, center_y);
+        match self.circle.started {
+            None => magic_styles::idle(self.style, &mut canvas, radius, &palette),
+            Some(started) => {
+                let age = now.saturating_duration_since(started).as_secs_f64();
+                let frame = Frame {
+                    radius,
+                    layers: geometry.layers,
+                    clock: Clock {
+                        age,
+                        spin: if self.animations_enabled { age } else { 0.0 },
+                        settled: outlet || !self.animations_enabled,
+                    },
+                    prompt: &self.circle.prompt,
+                    reply: &self.circle.reply,
+                    palette,
+                };
+                magic_styles::draw(self.style, &mut canvas, &frame);
+                if outlet {
+                    let end = f64::from(height * 4) - 1.0 - center_y;
+                    magic_styles::outlet(self.style, &mut canvas, radius, end);
                 }
             }
         }
-        for (index, mask) in pixels.into_iter().enumerate() {
-            if mask != 0 {
-                let glyph = char::from_u32(0x2800 + u32::from(mask)).unwrap_or(' ');
-                buf[(
-                    area.x + (index % usize::from(width)) as u16,
-                    area.y + (index / usize::from(width)) as u16,
-                )]
-                    .set_char(glyph)
-                    .set_fg(Color::Magenta);
-            }
-        }
-        if self.circle.is_active() {
-            let replies = std::iter::once(self.circle.current_reply.as_str())
-                .filter(|text| !text.is_empty())
-                .chain(
-                    self.circle
-                        .completed_replies
-                        .iter()
-                        .rev()
-                        .map(String::as_str),
-                );
-            let tracks = std::iter::once(self.circle.prompt.as_str()).chain(replies.take(2));
-            let mut occupied = vec![false; usize::from(width) * usize::from(height)];
-            for (track, text) in tracks.enumerate() {
-                let r = radius * [1.0, 0.64, 0.4][track];
-                let direction = if track % 2 == 0 { 1.0 } else { -1.0 };
-                let mut angle = direction * rotation + track as f64 * TAU / 3.0;
-                let start_angle = angle;
-                for glyph in text.graphemes(/*is_extended*/ true) {
-                    let cells = glyph.width();
-                    if cells == 0 || cells > usize::from(width) {
-                        continue;
-                    }
-                    let x = ((cx + r * angle.cos()) / 2.0).round() as i32 - cells as i32 / 2;
-                    let y = ((cy + r * angle.sin()) / 4.0).round() as i32;
-                    angle += (cells as f64 + 1.0) * 2.0 / r.max(1.0);
-                    if angle - start_angle > TAU - 0.25 {
-                        break;
-                    }
-                    if x < 0
-                        || y < 0
-                        || x as usize + cells > usize::from(width)
-                        || y >= i32::from(height)
-                    {
-                        continue;
-                    }
-                    let index = y as usize * usize::from(width) + x as usize;
-                    if occupied[index..index + cells].iter().any(|used| *used) {
-                        continue;
-                    }
-                    occupied[index..index + cells].fill(true);
-                    buf.set_stringn(
-                        area.x + x as u16,
-                        area.y + y as u16,
-                        glyph,
-                        cells,
-                        Style::default().fg(if track == 0 {
-                            Color::Cyan
-                        } else {
-                            Color::Reset
-                        }),
-                    );
-                }
-            }
-        }
+        canvas.paint(area, buf, &palette);
+    }
+}
+
+fn odd(size: u16) -> u16 {
+    if size.is_multiple_of(2) {
+        size.saturating_sub(1)
+    } else {
+        size
     }
 }
 

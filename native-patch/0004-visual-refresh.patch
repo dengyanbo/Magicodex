@@ -1,0 +1,1546 @@
+--- a/codex-rs/tui/src/chatwidget/magic.rs
++++ b/codex-rs/tui/src/chatwidget/magic.rs
+@@ -12,14 +12,16 @@
+                 self.sync_active_stream_tail();
+                 self.app_event_tx.send(AppEvent::MagicDisplayChanged);
+                 let state = if enabled { "on" } else { "off" };
+-                Box::new(PlainHistoryCell::new(vec![
+-                    format!("Magic circle: {state} (classic).").into(),
+-                ]))
++                Box::new(history_cell::new_info_event(
++                    format!("Magic circle {state}"),
++                    Some("· classic".to_string()),
++                ))
+             }
+             "list" => Box::new(PlainHistoryCell::new(
+-                crate::magic_circle::STYLES
+-                    .iter()
+-                    .map(|(id, description)| format!("{id} — {description}").into())
++                std::iter::once(vec!["• ".dim(), "Magic circle styles".into()].into())
++                    .chain(crate::magic_circle::STYLES.iter().map(|(id, description)| {
++                        vec!["  ".into(), id.magenta(), "  ".into(), description.dim()].into()
++                    }))
+                     .collect(),
+             )),
+             _ => Box::new(history_cell::new_error_event(
+@@ -49,6 +51,7 @@
+                 circle: self.magic_circle.clone(),
+                 captured_at: Instant::now(),
+                 enabled: self.magic_enabled.clone(),
++                animations_enabled: self.config.animations,
+             });
+             self.transcript.needs_final_message_separator = false;
+         }
+--- a/codex-rs/tui/src/chatwidget/rendering.rs
++++ b/codex-rs/tui/src/chatwidget/rendering.rs
+@@ -78,6 +78,7 @@
+                 RenderableItem::Owned(Box::new(crate::magic_circle::MagicView {
+                     circle: &self.magic_circle,
+                     animations_enabled: self.config.animations,
++                    scene: crate::magic_circle::MagicScene::Live,
+                 })),
+             );
+         }
+--- a/codex-rs/tui/src/lib.rs
++++ b/codex-rs/tui/src/lib.rs
+@@ -150,6 +150,7 @@
+ pub(crate) mod live_wrap;
+ pub use live_wrap::RowBuilder;
+ mod local_chatgpt_auth;
++mod magic_canvas;
+ mod magic_circle;
+ mod magic_output;
+ mod managed_new_thread_defaults;
+--- /dev/null
++++ b/codex-rs/tui/src/magic_canvas.rs
+@@ -0,0 +1,202 @@
++//! Braille drawing surface and circular text layout for the presentation-only magic circle.
++//!
++//! Coordinates are braille dots relative to the canvas centre. A terminal cell is two dots wide
++//! and four dots tall, which keeps circles round in the usual 1:2 terminal fonts.
++
++use ratatui::buffer::Buffer;
++use ratatui::layout::Rect;
++use ratatui::style::Style;
++
++const BITS: [[u8; 2]; 4] = [[0, 3], [1, 4], [2, 5], [6, 7]];
++
++/// Brightness of a stroke. A braille cell has one style, so the brightest ink in it wins.
++#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
++pub(crate) enum Ink {
++    Faint,
++    Line,
++    Bright,
++    Glint,
++}
++
++impl Ink {
++    fn style(self) -> Style {
++        match self {
++            Ink::Faint => Style::default().magenta().dim(),
++            Ink::Line => Style::default().magenta(),
++            Ink::Bright => Style::default().magenta().bold(),
++            // Like the native shimmer, a glint only raises the default foreground's level.
++            Ink::Glint => Style::default().bold(),
++        }
++    }
++}
++
++pub(crate) struct Canvas<'a> {
++    width: usize,
++    height: usize,
++    center: (f64, f64),
++    dots: Vec<(u8, Option<Ink>)>,
++    reserved: Vec<bool>,
++    glyphs: Vec<(usize, usize, &'a str, usize, Style)>,
++}
++
++impl<'a> Canvas<'a> {
++    pub(crate) fn new(width: u16, height: u16, center_y: f64) -> Self {
++        let (width, height) = (usize::from(width), usize::from(height));
++        Self {
++            width,
++            height,
++            center: (width as f64 - 0.5, center_y),
++            dots: vec![(0, None); width * height],
++            reserved: vec![false; width * height],
++            glyphs: Vec::new(),
++        }
++    }
++
++    fn dot(&self, x: f64, y: f64) -> Option<(usize, usize)> {
++        // Round ties toward the centre so mirrored points land on mirrored dots.
++        let snap = |offset: f64, centre: f64| (centre + offset - offset.signum() * 1e-6).round();
++        let (x, y) = (snap(x, self.center.0), snap(y, self.center.1));
++        let inside =
++            x >= 0.0 && y >= 0.0 && x < (self.width * 2) as f64 && y < (self.height * 4) as f64;
++        inside.then_some((x as usize, y as usize))
++    }
++
++    pub(crate) fn cell_of(&self, x: f64, y: f64) -> Option<(usize, usize)> {
++        self.dot(x, y).map(|(x, y)| (x / 2, y / 4))
++    }
++
++    pub(crate) fn plot(&mut self, x: f64, y: f64, ink: Ink) {
++        if let Some((x, y)) = self.dot(x, y) {
++            let cell = &mut self.dots[(y / 4) * self.width + x / 2];
++            cell.0 |= 1 << BITS[y % 4][x % 2];
++            cell.1 = cell.1.max(Some(ink));
++        }
++    }
++
++    /// Plots `sweep` radians of a circle around `center`, starting at `start`.
++    ///
++    /// Negative sweeps run counter-clockwise; `ink` receives each angle so highlights can travel.
++    pub(crate) fn arc(
++        &mut self,
++        center: (f64, f64),
++        radius: f64,
++        (start, sweep): (f64, f64),
++        ink: impl Fn(f64) -> Ink,
++    ) {
++        if radius <= 0.0 || sweep.abs() < 1e-9 {
++            return;
++        }
++        // Multiples of four keep full rings symmetric about both axes.
++        let steps = (radius * sweep.abs() * 1.3 / 4.0).ceil().max(1.0) as usize * 4;
++        for step in 0..=steps {
++            let theta = start + sweep * step as f64 / steps as f64;
++            self.plot(
++                center.0 + radius * theta.cos(),
++                center.1 + radius * theta.sin(),
++                ink(theta),
++            );
++        }
++    }
++
++    /// Draws the first `progress` fraction of a straight stroke.
++    pub(crate) fn line(&mut self, from: (f64, f64), to: (f64, f64), progress: f64, ink: Ink) {
++        if progress <= 0.0 {
++            return;
++        }
++        let steps = ((to.0 - from.0).hypot(to.1 - from.1) * progress * 1.3)
++            .ceil()
++            .max(1.0) as usize;
++        for step in 0..=steps {
++            let t = progress * step as f64 / steps as f64;
++            self.plot(
++                from.0 + (to.0 - from.0) * t,
++                from.1 + (to.1 - from.1) * t,
++                ink,
++            );
++        }
++    }
++
++    /// Finds cells along a circular track for glyphs of the given widths, in order.
++    ///
++    /// Glyphs pack edge to edge near the top and bottom so words stay readable, and take one row
++    /// each along the steep sides. Cells holding earlier text are skipped. Fewer slots than
++    /// widths are returned when the angular budget runs out.
++    pub(crate) fn track(
++        &self,
++        widths: &[usize],
++        radius: f64,
++        (start, direction): (f64, f64),
++        budget: f64,
++    ) -> Vec<(usize, usize)> {
++        let mut reserved = self.reserved.clone();
++        let step = 0.5 / radius.max(1.0);
++        let mut travelled = 0.0;
++        let mut last_row = None;
++        let mut slots = Vec::with_capacity(widths.len());
++        'glyphs: for &width in widths {
++            while travelled <= budget {
++                let theta = start + direction * travelled;
++                travelled += step;
++                let Some((column, row)) = self.cell_of(radius * theta.cos(), radius * theta.sin())
++                else {
++                    continue;
++                };
++                let Some(left) = column.checked_sub(width / 2) else {
++                    continue;
++                };
++                let steep = 2.0 * theta.sin().abs() < theta.cos().abs();
++                if left + width > self.width || (steep && last_row == Some(row)) {
++                    continue;
++                }
++                let cells = row * self.width + left..row * self.width + left + width;
++                if reserved[cells.clone()].iter().any(|taken| *taken) {
++                    continue;
++                }
++                reserved[cells].fill(true);
++                slots.push((left, row));
++                last_row = Some(row);
++                continue 'glyphs;
++            }
++            break;
++        }
++        slots
++    }
++
++    /// Places a glyph over the braille layer and keeps later text out of its cells.
++    pub(crate) fn write(
++        &mut self,
++        (left, row): (usize, usize),
++        glyph: &'a str,
++        width: usize,
++        style: Style,
++    ) {
++        let start = row * self.width + left;
++        let end = (start + width).min((row + 1) * self.width);
++        self.reserved[start..end].fill(true);
++        self.glyphs.push((left, row, glyph, end - start, style));
++    }
++
++    pub(crate) fn paint(self, area: Rect, buf: &mut Buffer) {
++        for (index, (mask, ink)) in self.dots.into_iter().enumerate() {
++            // Text replaces the strokes in its cells instead of inheriting their style.
++            let Some(ink) = ink.filter(|_| !self.reserved[index]) else {
++                continue;
++            };
++            let glyph = char::from_u32(0x2800 + u32::from(mask)).unwrap_or(' ');
++            let position = (
++                area.x + (index % self.width) as u16,
++                area.y + (index / self.width) as u16,
++            );
++            buf[position].set_char(glyph).set_style(ink.style());
++        }
++        for (left, row, glyph, width, style) in self.glyphs {
++            buf.set_stringn(
++                area.x + left as u16,
++                area.y + row as u16,
++                glyph,
++                width,
++                style,
++            );
++        }
++    }
++}
+--- a/codex-rs/tui/src/magic_circle.rs
++++ b/codex-rs/tui/src/magic_circle.rs
+@@ -1,85 +1,114 @@
+ //! Optional, presentation-only magic circle. No text from this module enters model context.
+-
+-use std::collections::VecDeque;
++//!
++//! The classic circle grows with waiting time and gains layers until the first assistant reply
++//! freezes it: outer ring, prompt band, reply band with a hexagram, vertex nodes, spokes and an
++//! outer rim. Radii are braille dots (see `magic_canvas`). The prompt is inscribed in the outer
++//! band; the latest public assistant text, never reasoning, orbits the inner band.
++
++use std::f64::consts::FRAC_PI_2;
++use std::f64::consts::PI;
+ use std::f64::consts::TAU;
+ use std::time::Duration;
+ use std::time::Instant;
+ 
+ use ratatui::buffer::Buffer;
+ use ratatui::layout::Rect;
+-use ratatui::style::Color;
+ use ratatui::style::Style;
+ use unicode_segmentation::UnicodeSegmentation;
+ use unicode_width::UnicodeWidthStr;
+ 
+ use crate::history_cell::sanitize_user_text;
++use crate::magic_canvas::Canvas;
++use crate::magic_canvas::Ink;
+ use crate::render::renderable::Renderable;
+ 
+-pub(crate) const STYLES: &[(&str, &str)] = &[("classic", "Concentric circles with orbiting text")];
++pub(crate) const STYLES: &[(&str, &str)] = &[(
++    "classic",
++    "Hexagram circle: the prompt orbits the outer band, replies the inner band",
++)];
+ pub(crate) const USAGE: &str = "Usage: /magic on|off|list";
++pub(crate) const CIRCLE_ROWS: u16 = 21;
++/// Rows below an outlet circle for the light cone that leads into the answer.
++pub(crate) const OUTLET_ROWS: u16 = 3;
++const IDLE_ROWS: u16 = 5;
++const MAX_WIDTH: u16 = 99;
+ const TEXT_LIMIT: usize = 192;
++const IDLE_RADIUS: f64 = 8.0;
++const START_RADIUS: f64 = 20.0;
++const MAX_RADIUS: f64 = 40.0;
++const GROWTH_SECONDS: f64 = 16.0;
++/// Text bands are two cell rows tall, so their borders never share a row with glyphs at the poles.
++const BAND: f64 = 8.0;
++/// Charging seconds that unlock the reply band and hexagram, vertex nodes, spokes and outer rim.
++const LAYER_TIMES: [f64; 4] = [2.5, 5.0, 8.0, 11.0];
++const SEPARATOR: &str = " ✦ ";
+ 
+ #[derive(Clone, Debug, Default, PartialEq)]
+ pub(crate) struct MagicCircle {
+     started: Option<Instant>,
+     first_reply: Option<Duration>,
+     prompt: String,
+-    current_reply: String,
+-    completed_replies: VecDeque<String>,
++    /// Tail of the latest public assistant text.
++    reply: String,
++    reply_complete: bool,
+ }
+ 
+ #[derive(Debug, PartialEq)]
+ struct Geometry {
+     radius: f64,
+-    rings: usize,
++    /// Layers unlocked beyond the outer ring and prompt band.
++    layers: usize,
+ }
+ 
+ impl MagicCircle {
+     pub(crate) fn submit(&mut self, text: &str, now: Instant) {
+         self.begin(now);
+-        self.prompt = display_fragment(text);
++        self.prompt = display_text(text)
++            .graphemes(/*is_extended*/ true)
++            .take(TEXT_LIMIT)
++            .collect();
+     }
+ 
+     pub(crate) fn begin(&mut self, now: Instant) {
+         if self.started.is_none() {
+             self.started = Some(now);
+             self.first_reply = None;
+-            self.current_reply.clear();
+-            self.completed_replies.clear();
++            self.reply.clear();
++            self.reply_complete = false;
+         }
+     }
+ 
+     pub(crate) fn reply_delta(&mut self, delta: &str, now: Instant) {
+-        if let Some(started) = self.started {
+-            let fragment = display_fragment(delta);
+-            if !fragment.trim().is_empty() {
+-                self.first_reply
+-                    .get_or_insert(now.saturating_duration_since(started));
+-            }
+-            self.current_reply.push_str(&fragment);
+-            self.current_reply = self
+-                .current_reply
+-                .graphemes(/*is_extended*/ true)
+-                .rev()
+-                .take(TEXT_LIMIT)
+-                .collect::<Vec<_>>()
+-                .into_iter()
+-                .rev()
+-                .collect();
+-        }
++        let Some(started) = self.started else {
++            return;
++        };
++        let fragment = display_text(delta);
++        let blank = fragment.trim().is_empty();
++        if !blank {
++            self.first_reply
++                .get_or_insert(now.saturating_duration_since(started));
++        }
++        if self.reply_complete {
++            if blank {
++                return;
++            }
++            self.reply.clear();
++            self.reply_complete = false;
++        }
++        self.reply.push_str(&fragment);
++        self.reply = keep_tail(&self.reply);
+     }
+ 
+     pub(crate) fn complete_reply(&mut self, text: &str, now: Instant) {
+-        if self.started.is_some() {
+-            self.reply_delta(text, now);
+-            let text = display_fragment(text);
+-            if !text.trim().is_empty() {
+-                self.completed_replies.push_back(text);
+-                while self.completed_replies.len() > 2 {
+-                    self.completed_replies.pop_front();
+-                }
+-            }
+-            self.current_reply.clear();
++        let Some(started) = self.started else {
++            return;
++        };
++        let text = display_text(text);
++        if !text.trim().is_empty() {
++            self.first_reply
++                .get_or_insert(now.saturating_duration_since(started));
++            self.reply = keep_tail(&text);
++            self.reply_complete = true;
+         }
+     }
+ 
+@@ -94,22 +123,24 @@
+     fn geometry(&self, now: Instant) -> Geometry {
+         let Some(started) = self.started else {
+             return Geometry {
+-                radius: 4.0,
+-                rings: 1,
++                radius: IDLE_RADIUS,
++                layers: 0,
+             };
+         };
+-        let age = self
++        let charge = self
+             .first_reply
+             .unwrap_or_else(|| now.saturating_duration_since(started))
+             .as_secs_f64();
++        let growth = (charge / GROWTH_SECONDS).min(1.0);
+         Geometry {
+-            radius: (14.0 + age).min(40.0),
+-            rings: 2 + (age / 4.0).floor().min(5.0) as usize,
+-        }
+-    }
+-}
+-
+-fn display_fragment(text: &str) -> String {
++            radius: START_RADIUS + (MAX_RADIUS - START_RADIUS) * (1.0 - (1.0 - growth).powi(3)),
++            layers: LAYER_TIMES.iter().filter(|at| **at <= charge).count(),
++        }
++    }
++}
++
++/// Single-line printable text without control characters or bidi overrides.
++fn display_text(text: &str) -> String {
+     sanitize_user_text(text.into())
+         .replace(['\n', '\r', '\t'], " ")
+         .graphemes(/*is_extended*/ true)
+@@ -118,13 +149,28 @@
+                 .chars()
+                 .any(|c| matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'))
+         })
+-        .take(TEXT_LIMIT)
+         .collect()
++}
++
++fn keep_tail(text: &str) -> String {
++    let count = text.graphemes(/*is_extended*/ true).count();
++    text.graphemes(/*is_extended*/ true)
++        .skip(count.saturating_sub(TEXT_LIMIT))
++        .collect()
++}
++
++/// Where a circle is drawn: charging above the composer, or fixed in history as the outlet.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(crate) enum MagicScene {
++    Live,
++    /// Settled drawing with a light cone below it, leading into the answer.
++    Outlet,
+ }
+ 
+ pub(crate) struct MagicView<'a> {
+     pub(crate) circle: &'a MagicCircle,
+     pub(crate) animations_enabled: bool,
++    pub(crate) scene: MagicScene,
+ }
+ 
+ impl Renderable for MagicView<'_> {
+@@ -132,9 +178,9 @@
+         if width < 16 {
+             0
+         } else if self.circle.is_active() {
+-            21
++            CIRCLE_ROWS
+         } else {
+-            3
++            IDLE_ROWS
+         }
+     }
+ 
+@@ -143,13 +189,35 @@
+     }
+ }
+ 
++/// Animation state for one frame. Settled frames draw every unlocked layer completely.
++struct Clock {
++    age: f64,
++    spin: f64,
++    settled: bool,
++}
++
++impl Clock {
++    /// Drawn fraction of a layer that starts `at` seconds after submission.
++    fn reveal(&self, at: f64, duration: f64) -> f64 {
++        if self.settled {
++            1.0
++        } else {
++            ((self.age - at) / duration).clamp(0.0, 1.0)
++        }
++    }
++}
++
+ impl MagicView<'_> {
+     pub(crate) fn render_at(&self, area: Rect, buf: &mut Buffer, now: Instant) {
+-        if area.width < 8 || area.height < 3 {
++        let outlet = self.scene == MagicScene::Outlet;
++        let cone_rows = if outlet { OUTLET_ROWS } else { 0 };
++        // Odd sizes put the centre in the middle of a cell, so the core glyph and beam align.
++        let rows = odd(area.height.saturating_sub(cone_rows).min(CIRCLE_ROWS));
++        let width = odd(area.width.min(MAX_WIDTH));
++        if width < 7 || rows < 3 {
+             return;
+         }
+-        let width = area.width.min(100);
+-        let height = area.height.min(21);
++        let height = rows + cone_rows;
+         let area = Rect::new(
+             area.x + (area.width - width) / 2,
+             area.y + (area.height - height) / 2,
+@@ -159,112 +227,286 @@
+         let geometry = self.circle.geometry(now);
+         let radius = geometry
+             .radius
+-            .min(f64::from(height * 2 - 2))
++            .min(f64::from(rows * 2 - 2))
+             .min(f64::from(width - 2));
+-        let rotation = if self.animations_enabled {
+-            self.circle.started.map_or(/*default*/ 0.0, |started| {
+-                now.saturating_duration_since(started).as_secs_f64() * 0.3
+-            })
++        let bottom = f64::from(rows * 4) - 1.0;
++        let center_y = if outlet {
++            bottom - radius
+         } else {
+-            0.0
++            bottom / 2.0
+         };
+-        let mut pixels = vec![0_u8; usize::from(width) * usize::from(height)];
+-        let cx = (f64::from(width) * 2.0 - 1.0) / 2.0;
+-        let cy = (f64::from(height) * 4.0 - 1.0) / 2.0;
+-        let mut plot = |x: f64, y: f64| {
+-            let x = (x + cx).round() as i32;
+-            let y = (y + cy).round() as i32;
+-            if x >= 0 && y >= 0 && x < i32::from(width) * 2 && y < i32::from(height) * 4 {
+-                let bits = [[0, 3], [1, 4], [2, 5], [6, 7]];
+-                pixels[(y as usize / 4) * usize::from(width) + x as usize / 2] |=
+-                    1 << bits[y as usize % 4][x as usize % 2];
+-            }
+-        };
+-        for ring in 0..geometry.rings {
+-            let r = radius * (1.0 - ring as f64 * 0.72 / geometry.rings as f64);
+-            for step in 0..240 {
+-                let theta = f64::from(step) * TAU / 240.0 + rotation;
+-                plot(r * theta.cos(), r * theta.sin());
+-            }
+-        }
+-        if self.circle.is_active() {
+-            for vertex in 0..geometry.rings * 2 + 2 {
+-                let a = vertex as f64 * TAU / (geometry.rings * 2 + 2) as f64 + rotation;
+-                let b = a + TAU * 2.0 / (geometry.rings * 2 + 2) as f64;
+-                for step in 0..40 {
+-                    let t = f64::from(step) / 40.0;
+-                    plot(
+-                        radius * 0.8 * (a.cos() * (1.0 - t) + b.cos() * t),
+-                        radius * 0.8 * (a.sin() * (1.0 - t) + b.sin() * t),
++        let mut canvas = Canvas::new(width, height, center_y);
++        match self.circle.started {
++            None => draw_idle(&mut canvas, radius),
++            Some(started) => {
++                let age = now.saturating_duration_since(started).as_secs_f64();
++                let clock = Clock {
++                    age,
++                    spin: if self.animations_enabled { age } else { 0.0 },
++                    settled: outlet || !self.animations_enabled,
++                };
++                self.draw_charged(&mut canvas, &clock, radius, geometry.layers);
++                if outlet {
++                    draw_cone(&mut canvas, radius, f64::from(height * 4) - 1.0 - center_y);
++                }
++            }
++        }
++        canvas.paint(area, buf);
++    }
++
++    fn draw_charged<'a>(
++        &'a self,
++        canvas: &mut Canvas<'a>,
++        clock: &Clock,
++        radius: f64,
++        layers: usize,
++    ) {
++        let origin = (0.0, 0.0);
++        let glint_at = clock.spin * 2.1;
++        canvas.arc(
++            origin,
++            radius,
++            (-FRAC_PI_2, TAU * clock.reveal(/*at*/ 0.0, /*duration*/ 0.6)),
++            |theta| {
++                // A comet-like highlight runs clockwise around the rim while the turn waits.
++                let trail = (glint_at - theta).rem_euclid(TAU);
++                if clock.settled || trail >= 0.8 {
++                    Ink::Line
++                } else if trail < 0.35 {
++                    Ink::Glint
++                } else {
++                    Ink::Bright
++                }
++            },
++        );
++        let beat = clock.settled || ((clock.age / 0.6) as u64).is_multiple_of(2);
++        let core = if beat { Ink::Bright } else { Ink::Line };
++        canvas.plot(-0.5, 0.0, core);
++        canvas.plot(0.5, 0.0, core);
++
++        let band = radius - BAND;
++        if band >= 8.0 {
++            canvas.arc(
++                origin,
++                band,
++                (
++                    -FRAC_PI_2,
++                    TAU * clock.reveal(/*at*/ 0.15, /*duration*/ 0.6),
++                ),
++                |_| Ink::Line,
++            );
++        }
++        let reply_ring = radius - 2.0 * BAND;
++        let reply_band = layers >= 1 && reply_ring >= 6.0;
++        if reply_band {
++            canvas.arc(
++                origin,
++                reply_ring,
++                (
++                    FRAC_PI_2,
++                    -TAU * clock.reveal(LAYER_TIMES[0], /*duration*/ 0.6),
++                ),
++                |_| Ink::Line,
++            );
++        }
++        if reply_band && reply_ring >= 11.0 {
++            let turn = -0.12 * clock.spin;
++            let points: [(f64, f64); 6] = std::array::from_fn(|vertex| {
++                let theta = turn - FRAC_PI_2 + vertex as f64 * TAU / 6.0;
++                (reply_ring * theta.cos(), reply_ring * theta.sin())
++            });
++            let drawn = clock.reveal(LAYER_TIMES[0] + 0.3, /*duration*/ 1.2) * 6.0;
++            for (index, (from, to)) in [(0, 2), (2, 4), (4, 0), (1, 3), (3, 5), (5, 1)]
++                .into_iter()
++                .enumerate()
++            {
++                let progress = (drawn - index as f64).clamp(0.0, 1.0);
++                canvas.line(points[from], points[to], progress, Ink::Line);
++            }
++            let inner = reply_ring / 2.0;
++            if layers >= 2 {
++                let nodes = clock.reveal(LAYER_TIMES[1], /*duration*/ 0.6);
++                for point in points.into_iter().take((nodes * 6.0).ceil() as usize) {
++                    canvas.arc(point, /*radius*/ 2.2, (0.0, TAU), |_| Ink::Bright);
++                }
++                canvas.arc(origin, inner, (-FRAC_PI_2, TAU * nodes), |_| Ink::Faint);
++            }
++            if layers >= 3 && inner >= 6.0 {
++                let spokes = clock.reveal(LAYER_TIMES[2], /*duration*/ 0.8);
++                for vertex in 0..6 {
++                    let theta = turn + f64::from(vertex) * TAU / 6.0;
++                    let (cos, sin) = (theta.cos(), theta.sin());
++                    canvas.line(
++                        (3.5 * cos, 3.5 * sin),
++                        (inner * cos, inner * sin),
++                        spokes,
++                        Ink::Faint,
+                     );
+                 }
+-            }
+-        }
+-        for (index, mask) in pixels.into_iter().enumerate() {
+-            if mask != 0 {
+-                let glyph = char::from_u32(0x2800 + u32::from(mask)).unwrap_or(' ');
+-                buf[(
+-                    area.x + (index % usize::from(width)) as u16,
+-                    area.y + (index / usize::from(width)) as u16,
+-                )]
+-                    .set_char(glyph)
+-                    .set_fg(Color::Magenta);
+-            }
+-        }
+-        if self.circle.is_active() {
+-            let replies = std::iter::once(self.circle.current_reply.as_str())
+-                .filter(|text| !text.is_empty())
+-                .chain(
+-                    self.circle
+-                        .completed_replies
+-                        .iter()
+-                        .rev()
+-                        .map(String::as_str),
++                canvas.arc(
++                    origin,
++                    /*radius*/ 3.5,
++                    (0.0, TAU * spokes),
++                    |_| Ink::Line,
+                 );
+-            let tracks = std::iter::once(self.circle.prompt.as_str()).chain(replies.take(2));
+-            let mut occupied = vec![false; usize::from(width) * usize::from(height)];
+-            for (track, text) in tracks.enumerate() {
+-                let r = radius * [1.0, 0.64, 0.4][track];
+-                let direction = if track % 2 == 0 { 1.0 } else { -1.0 };
+-                let mut angle = direction * rotation + track as f64 * TAU / 3.0;
+-                let start_angle = angle;
+-                for glyph in text.graphemes(/*is_extended*/ true) {
+-                    let cells = glyph.width();
+-                    if cells == 0 || cells > usize::from(width) {
+-                        continue;
++            }
++        }
++        if layers >= 4 {
++            canvas.arc(
++                origin,
++                radius - 2.0,
++                (
++                    FRAC_PI_2,
++                    TAU * clock.reveal(LAYER_TIMES[3], /*duration*/ 0.8),
++                ),
++                |_| Ink::Faint,
++            );
++        }
++
++        if band >= 8.0 {
++            self.inscribe_prompt(canvas, clock, radius - BAND / 2.0);
++        }
++        if reply_band && !self.circle.reply.is_empty() {
++            let glyphs: Vec<&str> = self
++                .circle
++                .reply
++                .graphemes(/*is_extended*/ true)
++                .rev()
++                .filter(|glyph| glyph.width() > 0)
++                .collect();
++            let widths: Vec<usize> = glyphs.iter().map(|glyph| glyph.width()).collect();
++            // Newest text leads at the head of the orbit; older words trail counter-clockwise.
++            let slots = canvas.track(
++                &widths,
++                radius - BAND * 1.5,
++                (FRAC_PI_2 + 0.25 * clock.spin, -1.0),
++                TAU - 0.7,
++            );
++            for (index, slot) in slots.into_iter().enumerate() {
++                let style = if index < 2 && !clock.settled {
++                    Style::default().bold()
++                } else {
++                    Style::default()
++                };
++                canvas.write(slot, glyphs[index], widths[index], style);
++            }
++        }
++    }
++
++    /// Writes the prompt around the outer band, repeating short prompts to close the ring.
++    fn inscribe_prompt<'a>(&'a self, canvas: &mut Canvas<'a>, clock: &Clock, track: f64) {
++        let prompt: Vec<&str> = self
++            .circle
++            .prompt
++            .graphemes(/*is_extended*/ true)
++            .filter(|glyph| glyph.width() > 0)
++            .collect();
++        if prompt.is_empty() {
++            return;
++        }
++        let separator: Vec<&str> = SEPARATOR.graphemes(/*is_extended*/ true).collect();
++        let unit = prompt.len() + separator.len();
++        let capacity = (PI * track) as usize + 2;
++        let mut glyphs: Vec<&str> =
++            std::iter::repeat_n(prompt.iter().chain(&separator), capacity / unit + 1)
++                .flatten()
++                .copied()
++                .collect();
++        let path = (-FRAC_PI_2 + 0.15 * clock.spin, 1.0);
++        let widths: Vec<usize> = glyphs.iter().map(|glyph| glyph.width()).collect();
++        let mut slots = canvas.track(&widths, track, path, TAU - 0.3);
++        let complete = (slots.len() / unit * unit).max(prompt.len());
++        if slots.len() < prompt.len() {
++            if let Some(last) = slots.len().checked_sub(1) {
++                glyphs[last] = "…";
++            }
++        } else {
++            // Long leftovers keep whole words; short ones would echo the start, so stars close the
++            // rest of the ring at the same spacing as the separator.
++            let partial = slots.len() - complete;
++            let boundary = if partial * 2 < prompt.len() {
++                complete
++            } else {
++                glyphs[complete..slots.len()]
++                    .iter()
++                    .rposition(|glyph| *glyph == " ")
++                    .map_or(slots.len(), |space| complete + space)
++            };
++            if boundary < slots.len() {
++                let after_space = boundary
++                    .checked_sub(1)
++                    .is_some_and(|previous| glyphs[previous] == " ");
++                glyphs.truncate(boundary);
++                glyphs.extend((0..capacity).map(|offset| {
++                    if (offset + usize::from(after_space)) % 2 == 1 {
++                        "✦"
++                    } else {
++                        " "
+                     }
+-                    let x = ((cx + r * angle.cos()) / 2.0).round() as i32 - cells as i32 / 2;
+-                    let y = ((cy + r * angle.sin()) / 4.0).round() as i32;
+-                    angle += (cells as f64 + 1.0) * 2.0 / r.max(1.0);
+-                    if angle - start_angle > TAU - 0.25 {
+-                        break;
+-                    }
+-                    if x < 0
+-                        || y < 0
+-                        || x as usize + cells > usize::from(width)
+-                        || y >= i32::from(height)
+-                    {
+-                        continue;
+-                    }
+-                    let index = y as usize * usize::from(width) + x as usize;
+-                    if occupied[index..index + cells].iter().any(|used| *used) {
+-                        continue;
+-                    }
+-                    occupied[index..index + cells].fill(true);
+-                    buf.set_stringn(
+-                        area.x + x as u16,
+-                        area.y + y as u16,
+-                        glyph,
+-                        cells,
+-                        Style::default().fg(if track == 0 {
+-                            Color::Cyan
+-                        } else {
+-                            Color::Reset
+-                        }),
+-                    );
+-                }
+-            }
+-        }
++                }));
++                // Layout is deterministic, so the kept prefix lands on the same cells.
++                let widths: Vec<usize> = glyphs.iter().map(|glyph| glyph.width()).collect();
++                slots = canvas.track(&widths, track, path, TAU - 0.3);
++            }
++        }
++        let total = slots.len();
++        // The prompt is inscribed glyph by glyph right after submission.
++        let shown = (total as f64 * clock.reveal(/*at*/ 0.1, /*duration*/ 1.2)).ceil() as usize;
++        for (index, slot) in slots.into_iter().take(shown).enumerate() {
++            let fresh = shown < total && index + 2 >= shown;
++            let style = if fresh {
++                Style::default().cyan().bold()
++            } else {
++                Style::default().cyan()
++            };
++            canvas.write(slot, glyphs[index], glyphs[index].width(), style);
++        }
++    }
++}
++
++fn odd(size: u16) -> u16 {
++    if size.is_multiple_of(2) {
++        size.saturating_sub(1)
++    } else {
++        size
++    }
++}
++
++/// Before submission: a small double ring around a star, drawn without animation.
++fn draw_idle(canvas: &mut Canvas<'_>, radius: f64) {
++    canvas.arc((0.0, 0.0), radius, (0.0, TAU), |_| Ink::Line);
++    canvas.arc((0.0, 0.0), radius - 2.5, (0.0, TAU), |_| Ink::Faint);
++    if let Some(cell) = canvas.cell_of(/*x*/ 0.0, /*y*/ 0.0) {
++        canvas.write(
++            cell,
++            "✦",
++            /*width*/ 1,
++            Style::default().magenta().bold(),
++        );
++    }
++}
++
++/// A gate on the rim and a widening light cone that ends where the answer begins.
++fn draw_cone(canvas: &mut Canvas<'_>, radius: f64, end: f64) {
++    canvas.arc(
++        (0.0, radius),
++        /*radius*/ 2.4,
++        (0.0, TAU),
++        |_| Ink::Bright,
++    );
++    let top = (radius + 2.4).ceil();
++    let mut y = top;
++    while y <= end {
++        let depth = y - top;
++        let ink = if depth < 3.0 { Ink::Glint } else { Ink::Bright };
++        canvas.plot(-0.5, y, ink);
++        canvas.plot(0.5, y, ink);
++        let spread = depth * 0.55;
++        if spread >= 1.5 {
++            canvas.plot(-0.5 - spread, y, Ink::Faint);
++            canvas.plot(0.5 + spread, y, Ink::Faint);
++        }
++        y += 1.0;
+     }
+ }
+ 
+--- a/codex-rs/tui/src/magic_circle_tests.rs
++++ b/codex-rs/tui/src/magic_circle_tests.rs
+@@ -1,5 +1,7 @@
+ use super::*;
+ use pretty_assertions::assert_eq;
++use ratatui::style::Color;
++use ratatui::style::Modifier;
+ 
+ #[test]
+ fn grows_until_first_reply_and_returns_to_idle() {
+@@ -11,7 +13,7 @@
+     let later = circle.geometry(now + Duration::from_secs(/*secs*/ 12));
+     assert!(submitted.radius > idle.radius);
+     assert!(later.radius > submitted.radius);
+-    assert!(later.rings > submitted.rings);
++    assert!(later.layers > submitted.layers);
+     circle.reply_delta("first reply", now + Duration::from_secs(/*secs*/ 12));
+     assert_eq!(
+         circle.geometry(now + Duration::from_secs(/*secs*/ 120)),
+@@ -43,24 +45,48 @@
+     let original = input.clone();
+     let mut circle = MagicCircle::default();
+     circle.submit(&input, Instant::now());
++    circle.reply_delta(&input, Instant::now());
+     assert_eq!(input, original);
+     assert!(circle.prompt.graphemes(/*is_extended*/ true).count() <= TEXT_LIMIT);
++    assert!(circle.reply.graphemes(/*is_extended*/ true).count() <= TEXT_LIMIT);
++    assert!(
++        circle.reply.ends_with("中文"),
++        "replies keep their newest text"
++    );
+     assert!(!circle.prompt.contains('\u{1b}'));
+ }
+ 
+-fn snapshot(circle: &MagicCircle, now: Instant) -> String {
++#[test]
++fn completed_reply_stays_until_the_next_public_text() {
++    let now = Instant::now();
++    let mut circle = MagicCircle::default();
++    circle.begin(now);
++    circle.reply_delta("Reading", now);
++    circle.complete_reply("Reading the files", now);
++    circle.reply_delta("\n", now);
++    assert_eq!(circle.reply, "Reading the files");
++    circle.reply_delta("Next", now);
++    assert_eq!(circle.reply, "Next");
++}
++
++fn render(circle: &MagicCircle, now: Instant, animations_enabled: bool) -> Buffer {
+     let area = Rect::new(
+         /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 21,
+     );
+     let mut buffer = Buffer::empty(area);
+     MagicView {
+         circle,
+-        animations_enabled: true,
++        animations_enabled,
++        scene: MagicScene::Live,
+     }
+     .render_at(area, &mut buffer, now);
+     buffer
++}
++
++fn text(buffer: &Buffer) -> String {
++    buffer
+         .content()
+-        .chunks(/*chunk_size*/ 80)
++        .chunks(usize::from(buffer.area.width))
+         .map(|row| {
+             row.iter()
+                 .map(ratatui::buffer::Cell::symbol)
+@@ -72,6 +98,17 @@
+         .join("\n")
+ }
+ 
++fn snapshot(circle: &MagicCircle, now: Instant) -> String {
++    text(&render(circle, now, /*animations_enabled*/ true))
++}
++
++fn submitted(prompt: &str) -> (MagicCircle, Instant) {
++    let now = Instant::now();
++    let mut circle = MagicCircle::default();
++    circle.submit(prompt, now);
++    (circle, now)
++}
++
+ #[test]
+ fn idle_circle_snapshot() {
+     let now = Instant::now();
+@@ -80,18 +117,51 @@
+ }
+ 
+ #[test]
+-fn submitted_circle_snapshot() {
+-    let now = Instant::now();
+-    let mut circle = MagicCircle::default();
+-    circle.submit("Create a small constellation", now);
+-    insta::assert_snapshot!("magic_submitted", snapshot(&circle, now));
++fn idle_circle_is_mirror_symmetric() {
++    // An odd width keeps the centre inside one cell, so the whole row can be mirrored.
++    let area = Rect::new(
++        /*x*/ 0, /*y*/ 0, /*width*/ 79, /*height*/ 5,
++    );
++    let mut buffer = Buffer::empty(area);
++    MagicView {
++        circle: &MagicCircle::default(),
++        animations_enabled: true,
++        scene: MagicScene::Live,
++    }
++    .render_at(area, &mut buffer, Instant::now());
++    assert!(text(&buffer).contains('✦'));
++    for row in buffer.content().chunks(usize::from(buffer.area.width)) {
++        let dots: Vec<[u8; 4]> = row
++            .iter()
++            .flat_map(|cell| {
++                let mask = cell
++                    .symbol()
++                    .chars()
++                    .next()
++                    .map(u32::from)
++                    .filter(|code| (0x2800..=0x28ff).contains(code))
++                    .map_or(0, |code| (code - 0x2800) as u8);
++                let column = |bits: [u8; 4]| bits.map(|bit| (mask >> bit) & 1);
++                [column([0, 1, 2, 6]), column([3, 4, 5, 7])]
++            })
++            .collect();
++        let mirrored: Vec<[u8; 4]> = dots.iter().rev().copied().collect();
++        assert_eq!(dots, mirrored);
++    }
++}
++
++#[test]
++fn inscribing_circle_snapshot() {
++    let (circle, now) = submitted("Create a small constellation");
++    insta::assert_snapshot!(
++        "magic_submitted",
++        snapshot(&circle, now + Duration::from_millis(/*millis*/ 700))
++    );
+ }
+ 
+ #[test]
+ fn charging_circle_snapshot() {
+-    let now = Instant::now();
+-    let mut circle = MagicCircle::default();
+-    circle.submit("Create a small constellation", now);
++    let (circle, now) = submitted("Create a small constellation");
+     insta::assert_snapshot!(
+         "magic_charging",
+         snapshot(&circle, now + Duration::from_secs(/*secs*/ 16))
+@@ -100,12 +170,76 @@
+ 
+ #[test]
+ fn reply_orbits_snapshot() {
+-    let now = Instant::now();
+-    let mut circle = MagicCircle::default();
+-    circle.submit("Create a small constellation", now);
++    let (mut circle, now) = submitted("Create a small constellation");
+     circle.reply_delta("Reading the files", now + Duration::from_secs(/*secs*/ 16));
+     insta::assert_snapshot!(
+         "magic_reply_orbits",
+         snapshot(&circle, now + Duration::from_secs(/*secs*/ 16))
+     );
+ }
++
++#[test]
++fn long_mixed_prompt_closes_the_band_without_echoing_its_start() {
++    let prompt = "帮我把 terminal 渲染改成魔法阵，等待模型时逐渐展开 Arcane circle";
++    let (circle, now) = submitted(prompt);
++    let rendered = snapshot(&circle, now + Duration::from_secs(/*secs*/ 4));
++    assert_eq!(rendered.matches("帮").count(), 1, "{rendered}");
++    insta::assert_snapshot!("magic_long_prompt", rendered);
++}
++
++#[test]
++fn reduced_motion_draws_every_unlocked_layer_at_once() {
++    let (circle, now) = submitted("Create a small constellation");
++    let buffer = render(&circle, now, /*animations_enabled*/ false);
++    let rendered = text(&buffer);
++    let strokes = rendered
++        .chars()
++        .filter(|c| ('\u{2801}'..='\u{28ff}').contains(c))
++        .count();
++    assert!(strokes > 40, "rings are drawn without a reveal: {rendered}");
++    assert!(
++        rendered.contains("Cre"),
++        "the prompt is inscribed at once: {rendered}"
++    );
++}
++
++#[test]
++fn layers_use_codex_colours_with_depth() {
++    let (mut circle, now) = submitted("Create a small constellation");
++    circle.reply_delta("Reading the files", now + Duration::from_secs(/*secs*/ 16));
++    let buffer = render(
++        &circle,
++        now + Duration::from_secs(/*secs*/ 17),
++        /*animations_enabled*/ true,
++    );
++    let inks = |symbol: fn(&str) -> bool| {
++        let mut styles: Vec<(Color, Modifier)> = buffer
++            .content()
++            .iter()
++            .filter(|cell| symbol(cell.symbol()))
++            .map(|cell| (cell.fg, cell.modifier))
++            .collect();
++        styles.sort_by_key(|style| format!("{style:?}"));
++        styles.dedup();
++        styles
++    };
++    let braille = |symbol: &str| {
++        symbol
++            .chars()
++            .all(|c| ('\u{2801}'..='\u{28ff}').contains(&c))
++    };
++    let strokes = inks(braille);
++    for expected in [
++        (Color::Magenta, Modifier::DIM),
++        (Color::Magenta, Modifier::empty()),
++        (Color::Magenta, Modifier::BOLD),
++        (Color::Reset, Modifier::BOLD),
++    ] {
++        assert!(
++            strokes.contains(&expected),
++            "missing {expected:?} in {strokes:?}"
++        );
++    }
++    let prompt = inks(|symbol| symbol == "C");
++    assert_eq!(prompt, vec![(Color::Cyan, Modifier::empty())]);
++}
+--- a/codex-rs/tui/src/magic_output.rs
++++ b/codex-rs/tui/src/magic_output.rs
+@@ -1,8 +1,9 @@
+ //! The visual outlet committed immediately before an assistant answer.
+ //!
+ //! The circle is fixed in scrollback before the first answer fragment, so native streaming,
+-//! consolidation and resize reflow cannot move the answer above its source. Decorative lines
+-//! are excluded from copy-friendly/raw output and the transcript overlay.
++//! consolidation and resize reflow cannot move the answer above its source. A light cone below
++//! the settled circle leads into the answer. Decorative lines are excluded from copy-friendly/raw
++//! output and the transcript overlay.
+ 
+ use std::sync::Arc;
+ use std::sync::atomic::AtomicBool;
+@@ -15,11 +16,15 @@
+ use ratatui::style::Stylize;
+ use ratatui::text::Line;
+ use ratatui::text::Span;
++use unicode_segmentation::UnicodeSegmentation;
+ use unicode_width::UnicodeWidthStr;
+ 
+ use crate::history_cell::HistoryCell;
++use crate::magic_circle::CIRCLE_ROWS;
+ use crate::magic_circle::MagicCircle;
++use crate::magic_circle::MagicScene;
+ use crate::magic_circle::MagicView;
++use crate::magic_circle::OUTLET_ROWS;
+ 
+ #[derive(Default)]
+ pub(crate) struct MagicOutput {
+@@ -40,6 +45,23 @@
+     pub(crate) circle: MagicCircle,
+     pub(crate) captured_at: Instant,
+     pub(crate) enabled: Arc<AtomicBool>,
++    pub(crate) animations_enabled: bool,
++}
++
++/// Newest provisional answer text glows in Codex magenta; it cools as more text arrives and
++/// returns to native styling once the line is committed.
++pub(crate) fn glowing_tail(text: String) -> Line<'static> {
++    let mut starts = text
++        .grapheme_indices(/*is_extended*/ true)
++        .rev()
++        .map(|(index, _)| index);
++    let hot = starts.nth(1).unwrap_or(0);
++    let warm = starts.nth(2).unwrap_or(0);
++    Line::from(vec![
++        text[..warm].to_string().into(),
++        text[warm..hot].to_string().magenta(),
++        text[hot..].to_string().magenta().bold(),
++    ])
+ }
+ 
+ impl HistoryCell for MagicOutletCell {
+@@ -48,11 +70,17 @@
+             return Vec::new();
+         }
+         let render_width = width.min(120);
+-        let area = Rect::new(/*x*/ 0, /*y*/ 0, render_width, /*height*/ 21);
++        let area = Rect::new(
++            /*x*/ 0,
++            /*y*/ 0,
++            render_width,
++            CIRCLE_ROWS + OUTLET_ROWS,
++        );
+         let mut buffer = Buffer::empty(area);
+         MagicView {
+             circle: &self.circle,
+-            animations_enabled: true,
++            animations_enabled: self.animations_enabled,
++            scene: MagicScene::Outlet,
+         }
+         .render_at(area, &mut buffer, self.captured_at);
+         let margin = " ".repeat(usize::from(width - render_width) / 2);
+@@ -74,9 +102,6 @@
+         while lines.last().is_some_and(blank) {
+             lines.pop();
+         }
+-        let center = " ".repeat(usize::from(width) / 2);
+-        lines.push(vec![center.clone().into(), "│".magenta()].into());
+-        lines.push(vec![center.into(), "▼".magenta()].into());
+         lines
+     }
+ 
+--- a/codex-rs/tui/src/magic_output_tests.rs
++++ b/codex-rs/tui/src/magic_output_tests.rs
+@@ -1,5 +1,7 @@
+ use super::*;
+ use pretty_assertions::assert_eq;
++use ratatui::style::Color;
++use ratatui::style::Modifier;
+ use std::time::Duration;
+ 
+ #[test]
+@@ -14,6 +16,7 @@
+         circle,
+         captured_at: now + Duration::from_secs(/*secs*/ 8),
+         enabled: enabled.clone(),
++        animations_enabled: true,
+     };
+     let lines = outlet.display_lines(/*width*/ 80);
+     let rendered = lines
+@@ -22,7 +25,12 @@
+         .collect::<Vec<_>>()
+         .join("\n");
+     insta::assert_snapshot!("magic_downward_outlet", rendered);
+-    assert!(rendered.trim_end().ends_with('▼'));
++    let cone = lines.last().map(Line::to_string).unwrap_or_default();
++    let mut strokes = cone.chars().filter(|c| !c.is_whitespace()).peekable();
++    assert!(
++        strokes.peek().is_some() && strokes.all(|c| ('\u{2800}'..='\u{28ff}').contains(&c)),
++        "the outlet ends with the light cone: {cone:?}"
++    );
+     assert_eq!(outlet.raw_lines(), Vec::<Line<'static>>::new());
+     assert_eq!(
+         outlet.transcript_lines(/*width*/ 80),
+@@ -41,24 +49,61 @@
+     use crate::streaming::controller::StreamController;
+     use crate::terminal_hyperlinks::visible_lines;
+ 
++    let text = |lines: Vec<Line<'static>>| lines.iter().map(Line::to_string).collect::<Vec<_>>();
+     let mut controller =
+         StreamController::new(Some(80), &std::env::temp_dir(), HistoryRenderMode::Rich);
+     controller.push("First paragraph");
+     assert!(controller.current_tail_lines().is_empty());
+     assert_eq!(
+-        visible_lines(controller.magic_tail_lines()),
+-        vec![Line::from("First paragraph")]
++        text(visible_lines(controller.magic_tail_lines())),
++        vec!["First paragraph".to_string()]
+     );
+     controller.push("\n\n第二段");
+     while controller.queued_lines() > 0 {
+         controller.on_commit_tick();
+     }
+     assert_eq!(
+-        visible_lines(controller.magic_tail_lines()),
+-        vec![Line::from("第二段")]
++        text(visible_lines(controller.magic_tail_lines())),
++        vec!["第二段".to_string()]
+     );
+     let (_, source) = controller.finalize();
+     assert_eq!(source, Some("First paragraph\n\n第二段\n".to_string()));
++}
++
++#[test]
++fn newest_provisional_text_glows_and_cools() {
++    let styles = |line: Line<'static>| {
++        line.spans
++            .into_iter()
++            .map(|span| {
++                (
++                    span.content.into_owned(),
++                    span.style.fg,
++                    span.style.add_modifier,
++                )
++            })
++            .collect::<Vec<_>>()
++    };
++    assert_eq!(
++        styles(glowing_tail("法阵已经完成".to_string())),
++        vec![
++            ("法".to_string(), None, Modifier::empty()),
++            (
++                "阵已经".to_string(),
++                Some(Color::Magenta),
++                Modifier::empty()
++            ),
++            ("完成".to_string(), Some(Color::Magenta), Modifier::BOLD),
++        ]
++    );
++    assert_eq!(
++        styles(glowing_tail("✦".to_string())),
++        vec![
++            (String::new(), None, Modifier::empty()),
++            (String::new(), Some(Color::Magenta), Modifier::empty()),
++            ("✦".to_string(), Some(Color::Magenta), Modifier::BOLD),
++        ]
++    );
+ }
+ 
+ #[test]
+--- a/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_charging.snap
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_charging.snap
+@@ -2,22 +2,24 @@
+ source: tui/src/magic_circle_tests.rs
+ expression: "snapshot(&circle, now + Duration::from_secs(16))"
+ ---
+-
+-
+-
+-                                ⢀⡠⠔⠒⠉⢉⣉⣉⣉C⡉r⠒e⢄⡀
+-                              ⡠⠚⢁⣠⠔⢒⣉⣁⣀⣀⣤⣤⣈⠉⠑⠢⢄at⢤⡀
+-                            ⡴⠋⢀⠔⠉⣠⡴⠿⢛⣋⣩⠭⠭⢍⣉⡙⠷⣶⢦⠈⠢⡀e⢄
+-                          ⢀⠎⢀⠔⢁⣶⡿⣋⠴⠊⢉⣀⠤⠤⠤⠤⣄⡈⠑⠢⡙⠳⣤⡈⢢ ⠳a
+-                         ⢀⠎⢀⠎⢀⡾⢋⠔⠁⡠⠚⢉⡠⠤⠤⠤⠤⣄⡈⠓⢄⠈⢣⡙⣿⡇⠳⡀ ⡀
+-                         ⡜ ⡎⢰⣿⢃⠎⢀⠞⢀⡔⠋      ⠉⢦⡀⢳⡀⢱⡈⣷ ⢣ s
+-                         ⡇⢰⠁⢸⡏⡸ ⡞ ⡞          ⢱ ⢣ ⣇⢸⣷⠈⡆⢸m
+-                         ⡇⢸ ⣸⡇⡇ ⡇ ⡇          ⢸ ⢸ ⢸⢸⡏ ⡇⢸a
+-                         ⡇⠸⡀⢿⡇⢹ ⢣ ⢇          ⡼ ⡼ ⡎⣸⡇⢀⠇⢸l
+-                         ⢣ ⢣ ⢿⡈⢇⠈⢧⠈⠳⣀      ⣠⠜⠁⡴⠁⡰⢡⣿⠇⡸ l
+-                         ⠈⢆⠈⢦⢸⣿⣌⢣⡀⠑⢤⡈⠙⠒⠒⠒⠒⠊⣁⡤⠊⢀⠔⣡⡾⠁⡰⠁⡰
+-                          ⠈⢦⠈⠣⡈⠛⢦⣌⠢⢄⡈⠙⠒⠒⠒⠒⠉⣁⡠⠖⣩⣾⠿⢁⠔⠁⡰c
+-                            ⠑⣄⠈⠢⡀⠳⠿⢶⣌⣉⣑⣒⣒⣋⣩⣥⣶⠞⠋⣀⠔⠁⣠⠞o
+-                             ⠈⠓⢄⡈⠑⠢⢄⣀⡉⠛⠛⠉⠉⢉⣉⠥⠔⠋⢁⡤sn
+-                                n⠑o⠤⣀⣈⣉⣉⣉⣉⣁⣀⠤e⠊t
+-                                    i t a l l
++                                 ⣀⣀⠤⠤⠤⠤⠤⠤⠤⠤⠤⣀⣀
++                             ⣠⠴⣒⡭tion ✦ Create⢭⣒⠦⣄
++                          ⣀⠔⡩tella⣀⡠⠤⠤⠤⠤⠤⠤⠤⢄⣀ a sm⢍⠢⣀
++                        ⣠⢞⡵ons⣀⠴⠚⠉           ⠉⠓⠦⣀all⢮⡳⣄
++                      ⢀⠔⡱ c⢀⡤⠊    ⢀⣀⠤⠤⠤⠤⢼⣭⣷⣀⡀    ⠑⢤⡀ ✦⢎⠢⡀
++                     ⢠⢎⡞ll⡠⠊   ⢀⡤⠊⠁    ⡠⠊⠉⡇ ⠈⠑⢤⡀   ⠑⢄ ✦⢳⡱⡄
++                    ⢀⢏ma ⡴⠁  ⣎⣽⣇⣀⣀⡀  ⢀⠞⠁  ⠘⡄   ⠘⢢⡀  ⠈⢦  ⢳⡹⡀
++                    ⡞⡞s ⡸⠁  ⢠⠊⠹⡄  ⠉⢉⣝⢷⠶⠶⠤⠤⣤⣱⣀⣀   ⠑⣄⡀ ⠈⢇ ✦⢳⢳
++                   ⢰⢱  ⢠⠃  ⢀⠇  ⢱  ⣠⠊ ⠘⡄   ⡴⠓⢧⠈⠉⠉⠑⢺⣿⣹  ⠘⡄ ⠈⡎⡆
++                   ⢸⢸a ⢸   ⢸    ⢣⢼⠁   ⣹⠤⣤⠞  ⠈⡆  ⡠⠊ ⡇   ⡇ ✦⡇⡇
++                   ⢸⢸  ⢸   ⢸  ⢀⡴⠉⣾⠉⠉⠑⢺⡁⠒⢈⡧⢄⣀⣀⡿⣀⠞⠁  ⡇   ⡇  ⡇⡇
++                   ⢸⢸e ⢸   ⢸ ⡠⠊  ⠸⡀  ⡴⠛⠒⣏   ⢀⡗⢣    ⡇   ⡇ ✦⡇⡇
++                   ⠸⡸⡀t⠘⡄  ⣏⣿⡧⢄⣀⣀⡀⢳⢤⠞   ⠘⡄ ⡠⠋  ⢇  ⢰⠁  ⢠⠃  ⢇⠇
++                    ⢧⢧a ⢱⡀ ⠈⠙⢄   ⠉⠉⢏⠛⠒⠒⠶⠶⢷⣝⣁⣀  ⠘⣆⡠⠃  ⢀⡎ ✦⡼⡼
++                    ⠈⣎⢧e ⠳⡀  ⠈⠣⡄   ⠘⡄  ⢀⡴⠁  ⠈⠉⠉⢹⣟⡹  ⢀⠞ ✦ ⣱⠁
++                     ⠘⢎⢧rC⠑⢄   ⠈⠓⢄⡀ ⢸⣀⡠⠊    ⢀⡠⠚⠁   ⡠⠊  ⡼⡱⠃
++                      ⠈⠢⡱ ✦⠈⠓⢄    ⠈⠉⢿⣛⡗⠒⠒⠒⠒⠉⠁    ⡠⠚⠁ ⣠⢎⠔⠁
++                        ⠙⢮⡳ no⠉⠲⢤⣀           ⣀⡤⠖⠉erC⢞⡵⠋
++                          ⠉⠢⣑itall⠉⠑⠒⠒⠒⠒⠒⠒⠒⠊⠉a eta⣊⠔⠉
++                             ⠙⠲⠭⣓etsnoc llams ⣚⠭⠖⠋
++                                 ⠉⠉⠒⠒⠒⠒⠒⠒⠒⠒⠒⠉⠉
+--- a/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_idle.snap
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_idle.snap
+@@ -10,7 +10,8 @@
+ 
+ 
+ 
+-
+-                                      ⣠⠤⠤⣄
+-                                      ⡇  ⢸⠄
+-                                      ⠙⠒⠖⠋
++                                     ⡠⠤⠤⠤⢄
++                                   ⢠⢊⡴⠋⠉⠙⢦⡑⡄
++                                   ⢸⢸  ✦  ⡇⡇
++                                   ⠘⢌⠳⣄⣀⣠⠞⡡⠃
++                                     ⠑⠒⠒⠒⠊
+--- /dev/null
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_long_prompt.snap
+@@ -0,0 +1,23 @@
++---
++source: tui/src/magic_circle_tests.rs
++expression: rendered
++---
++
++
++                                  ⢀⣀⡠⠤⠤⠤⠤⠤⢄⣀⡀
++                              ⢀⡤⠔⠊⠁✦ ✦ ✦ ✦ ✦⠈⠑⠢⢤⡀
++                            ⡠⠞⠉cle ⣀⣀⠤⠤⠤⠤⠤⣀⣀  帮 ⠉⠳⢄
++                          ⢠⠞ cir⡠⠖⠋⠁       ⠈⠙⠲我 把  ⠳⡄
++                         ⢰⠋e  ⡠⠊    ⣀⡠⠤⠤⠤⢄⣀    ⠑⢄  t⠙⡆
++                        ⢠⠃an⢀⡞   ⢠⠔⢻⠑⠦⣀ ⢀⡠⠔⢻⠢⡄   ⢳⡀e ⠘⡄
++                        ⡇ c ⡞   ⡰⠃ ⢸ ⣀⠤⠓⠣⣀ ⢸ ⠘⢆   ⢳ r ⢸
++                       ⢸ r ⢰⠁  ⢠⠃⣀⠤⢺⠉     ⠙⡾⣄⡀⠘⡄  ⠈⡆m  ⡇
++                       ⢸ A ⢸   ⢸⠯⣀ ⢸   ⠒   ⡇ ⠉⣲⡇   ⡇ i ⡇
++                       ⢸   ⠸⡀  ⠘⡄⠈⠙⡾⣄     ⣀⡧⠒⠉⢠⠃  ⢀⠇ n ⡇
++                        ⡇开  ⢧   ⠱⡄ ⡇ ⠉⢢⢤⠒⠉ ⡇ ⢠⠎   ⡼ a ⢸
++                        ⠘⡄展 ⠈⢧   ⠘⠢⣧⠔⠊⠁ ⠉⠲⢄⣧⠔⠃   ⡼⠁ l⢠⠃
++                         ⠸⣄渐  ⠑⢄    ⠉⠑⠒⠒⠒⠊⠉    ⡠⠊ 渲 ⣠⠇
++                          ⠘⢦逐 时 ⠑⠦⣄⡀       ⢀⣠⠴改 染  ⡴⠃
++                            ⠑⢦⣀型 模 ⠉⠉⠒⠒⠒⠒⠒⠉⠉魔 成 ⣀⡴⠊
++                              ⠈⠓⠢⢄待 等 ， 阵 法 ⢀⡠⠔⠚⠁
++                                  ⠈⠉⠑⠒⠒⠒⠒⠒⠊⠉⠁
+--- a/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_reply_orbits.snap
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_reply_orbits.snap
+@@ -2,22 +2,24 @@
+ source: tui/src/magic_circle_tests.rs
+ expression: "snapshot(&circle, now + Duration::from_secs(16))"
+ ---
+-
+-
+-
+-                                ⢀⡠⠔⠒⠉⢉⣉⣉⣉C⡉r⠒e⢄⡀
+-                              ⡠⠚⢁⣠⠔⢒⣉⣁⣀⣀⣤⣤⣈⠉⠑⠢⢄at⢤⡀
+-                            ⡴⠋⢀⠔⠉⣠⡴⠿⢛⣋⣩⠭⠭⢍⣉⡙⠷⣶⢦⠈⠢⡀e⢄
+-                          ⢀⠎⢀⠔⢁⣶⡿⣋⠴d⢉i⠤n⠤g⣄ ⠑t⡙⠳⣤⡈⢢ ⠳a
+-                         ⢀⠎⢀⠎⢀⡾⢋ea⡠⠚⢉⡠⠤⠤⠤⠤⣄⡈⠓⢄h⢣⡙⣿⡇⠳⡀ ⡀
+-                         ⡜ ⡎⢰⣿⢃R⢀⠞⢀⡔⠋      ⠉⢦⡀⢳⡀e ⣷ ⢣ s
+-                         ⡇⢰⠁⢸⡏⡸ ⡞ ⡞          ⢱ ⢣ f⢸⣷⠈⡆⢸m
+-                         ⡇⢸ ⣸⡇⡇ ⡇ ⡇          ⢸ ⢸ i⢸⡏ ⡇⢸a
+-                         ⡇⠸⡀⢿⡇⢹ ⢣ ⢇          ⡼ ⡼ l⣸⡇⢀⠇⢸l
+-                         ⢣ ⢣ ⢿⡈⢇⠈⢧⠈⠳⣀      ⣠⠜⠁⡴⠁⡰e⣿⠇⡸ l
+-                         ⠈⢆⠈⢦⢸⣿⣌⢣⡀⠑⢤⡈⠙⠒⠒⠒⠒⠊⣁⡤⠊⢀⠔s⡾⠁⡰⠁⡰
+-                          ⠈⢦⠈⠣⡈⠛⢦⣌⠢⢄⡈⠙⠒⠒⠒⠒⠉⣁⡠⠖⣩⣾⠿⢁⠔⠁⡰c
+-                            ⠑⣄⠈⠢⡀⠳⠿⢶⣌⣉⣑⣒⣒⣋⣩⣥⣶⠞⠋⣀⠔⠁⣠⠞o
+-                             ⠈⠓⢄⡈⠑⠢⢄⣀⡉⠛⠛⠉⠉⢉⣉⠥⠔⠋⢁⡤sn
+-                                n⠑o⠤⣀⣈⣉⣉⣉⣉⣁⣀⠤e⠊t
+-                                    i t a l l
++                                 ⣀⣀⠤⠤⠤⠤⠤⠤⠤⠤⠤⣀⣀
++                             ⣠⠴⣒⡭tion ✦ Create⢭⣒⠦⣄
++                          ⣀⠔⡩tella⣀⡠⠤⠤⠤⠤⠤⠤⠤⢄⣀ a sm⢍⠢⣀
++                        ⣠⢞⡵ons⣀⠴⠚⠉  Reading t⠉⠓⠦⣀all⢮⡳⣄
++                      ⢀⠔⡱ c⢀⡤⠊    ⢀⣀⠤⠤⠤⠤⢼⣭⣷⣀he fi⠑⢤⡀ ✦⢎⠢⡀
++                     ⢠⢎⡞ll⡠⠊   ⢀⡤⠊⠁    ⡠⠊⠉⡇ ⠈⠑⢤⡀les⠑⢄ ✦⢳⡱⡄
++                    ⢀⢏ma ⡴⠁  ⣎⣽⣇⣀⣀⡀  ⢀⠞⠁  ⠘⡄   ⠘⢢⡀  ⠈⢦  ⢳⡹⡀
++                    ⡞⡞s ⡸⠁  ⢠⠊⠹⡄  ⠉⢉⣝⢷⠶⠶⠤⠤⣤⣱⣀⣀   ⠑⣄⡀ ⠈⢇ ✦⢳⢳
++                   ⢰⢱  ⢠⠃  ⢀⠇  ⢱  ⣠⠊ ⠘⡄   ⡴⠓⢧⠈⠉⠉⠑⢺⣿⣹  ⠘⡄ ⠈⡎⡆
++                   ⢸⢸a ⢸   ⢸    ⢣⢼⠁   ⣹⠤⣤⠞  ⠈⡆  ⡠⠊ ⡇   ⡇ ✦⡇⡇
++                   ⢸⢸  ⢸   ⢸  ⢀⡴⠉⣾⠉⠉⠑⢺⡁⠒⢈⡧⢄⣀⣀⡿⣀⠞⠁  ⡇   ⡇  ⡇⡇
++                   ⢸⢸e ⢸   ⢸ ⡠⠊  ⠸⡀  ⡴⠛⠒⣏   ⢀⡗⢣    ⡇   ⡇ ✦⡇⡇
++                   ⠸⡸⡀t⠘⡄  ⣏⣿⡧⢄⣀⣀⡀⢳⢤⠞   ⠘⡄ ⡠⠋  ⢇  ⢰⠁  ⢠⠃  ⢇⠇
++                    ⢧⢧a ⢱⡀ ⠈⠙⢄   ⠉⠉⢏⠛⠒⠒⠶⠶⢷⣝⣁⣀  ⠘⣆⡠⠃  ⢀⡎ ✦⡼⡼
++                    ⠈⣎⢧e ⠳⡀  ⠈⠣⡄   ⠘⡄  ⢀⡴⠁  ⠈⠉⠉⢹⣟⡹  ⢀⠞ ✦ ⣱⠁
++                     ⠘⢎⢧rC⠑⢄   ⠈⠓⢄⡀ ⢸⣀⡠⠊    ⢀⡠⠚⠁   ⡠⠊  ⡼⡱⠃
++                      ⠈⠢⡱ ✦⠈⠓⢄    ⠈⠉⢿⣛⡗⠒⠒⠒⠒⠉⠁    ⡠⠚⠁ ⣠⢎⠔⠁
++                        ⠙⢮⡳ no⠉⠲⢤⣀           ⣀⡤⠖⠉erC⢞⡵⠋
++                          ⠉⠢⣑itall⠉⠑⠒⠒⠒⠒⠒⠒⠒⠊⠉a eta⣊⠔⠉
++                             ⠙⠲⠭⣓etsnoc llams ⣚⠭⠖⠋
++                                 ⠉⠉⠒⠒⠒⠒⠒⠒⠒⠒⠒⠉⠉
+--- a/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_submitted.snap
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_submitted.snap
+@@ -1,19 +1,21 @@
+ ---
+ source: tui/src/magic_circle_tests.rs
+-expression: "snapshot(&circle, now)"
++expression: "snapshot(&circle, now + Duration::from_millis(700))"
+ ---
+ 
+ 
+ 
+ 
+-
+-
+-
+-                                   ⣠⠔c⠉o⠉n⠙s⣄
+-                                 ⢀l ⢀⡿⠲⢶⡶⠖⢿⡀t⠳e
+-                                 l ⢠⣋⡷⠚⠁⠈⠓⢾⣙⡄ ⢹
+-                                 a⠴⣿⡁⡇    ⢸⢈⣿⠦⢸C
+-                                 m ⠘⣍⡷⢤⡀⢀⡤⢾⣩⠃ r
+-                                 ⠘s⡀⠈⣷⠴⠾⠷⠦⣾⠁⢀⡴e
+-                                    ⠢⣄⣀⣀⣀⣀⣠⠴a
+-                                     a  ⠁e t
++                                     ⣀⣀⣀⣀⣀
++                                 ⡠⠔⠊⠉   Cr⠉⠑⠢⢄
++                              ⢀⡴⠋      ⣀⣀eate ⠙⢦⡀
++                             ⢠⠊   ⣠⠔     ⠈⠑⠢⣀a s⠑⡄
++                            ⢠⠃  ⢀⡞⠁         ⠈⢳⡀m ⠘⡄
++                            ⡎   ⡼             ⢣ a ⢱
++                            ⡇   ⡇      ⠒      ⢸ l ⢸
++                            ⢇   ⢣             ⡜ l ⡸
++                            ⠘⡄  ⠈⢣⡀         ⢀⡼⠁c ⢠⠃
++                             ⠘⢄   ⠉⠢⣀⡀   ⢀⡠⠔⠋sno⡠⠃
++                              ⠈⠳⣄    ⠈⠉⠉⠉allet⣠⠞⠁
++                                 ⠑⠢⢄⣀   it⣀⡠⠔⠊
++                                     ⠉⠉⠉⠉⠉
+--- a/codex-rs/tui/src/snapshots/codex_tui__magic_output__tests__magic_downward_outlet.snap
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_output__tests__magic_downward_outlet.snap
+@@ -2,16 +2,25 @@
+ source: tui/src/magic_output_tests.rs
+ expression: rendered
+ ---
+-                                 ⢀⡠⠖⠚⠉⠉⣉⡉⠉⠉⠓⠢⢄⡀                                 
+-                               ⢠⠔⠃⣀⢴⠶⠭⣭⣥⣜⡛⢯⡒⠦⣀⠉⠲⡀                               
+-                              ⡰⠃⢠⢞⣡⣮⠖⠋⠉⣁⣈⠉⠙⠻⢶⠚⢷⡄⠉⢆                              
+-                             ⣰⠁⢰⡟⢩⠏⢀⡴⠚⠉⠁⠈⠉⠓⢦⡀⠳⣼⠘⡆⠈⣇                             
+-                             t ⡇⣸⡏ ⡞        ⢳ F⡱⣼ ⢸                             
+-                             p⢰⣱⢻e⢸⡁        ⢈⡇⢈i⢏⠇⢸                             
+-                             m ⡟⢎n ⢧        ⡼ ⣸r⢸ ⢸                             
+-                             ⢹o⠸⡄⡟o⠈⠳⢤⣀⡀⢀⣀⡤⠞⠁⣰s⣼⠇⢀⠏                             
+-                              r⣀⠘⢷⡤p⣦⣄⣀⡉⢉⣀⣠⠴t⢋⡵⠃⢠⠎                              
+-                               ⠈P⣀⠉⠲⠬s⣬e⢛r⣒ ⠗⠉⢠⠔⠃                               
+-                                 ⠈⠑⠢⢤⣀⣀⣈⣉⣀⣀⡤⠴⠊⠁                                 
+-                                        │
+-                                        ▼
++                               ⢀⡠⠤⠔⠒⠋⠉⠉⠉⠉⠉⠙⠒⠢⠤⢄⡀                                
++                            ⣀⠤⠊⠁ Prompt ✦ Promp⠈⠑⠤⣀                             
++                          ⡠⠚pt ✦⢀⡠⠤⠒⠊⠉⠉⠉⠉⠉⠑⠒⠤⢄⡀t ✦ ⠓⢄                           
++                        ⣠⠎rom⢀⡴⠚⠁      ⣠⠤⡄    ⠈⠓⢦⡀Pr ⠱⣄                         
++                       ⡰⠁ P⢀⡔⠁   ⢀⡠⠔⠒⠉⠉⣻⠿⡏⠒⠢⢄⡀   ⠈⢢⡀o ⠈⢆                        
++                      ⡜  ✦⢠⠏  ⣀⣠⠖⠁    ⡜⠁ ⠱⡀  ⠈⠲⣄   ⠹⡄   ⢣                       
++                     ⢸ t ⢠⠃e ⠸⣴⡻⠢⠤⠤⠤⢤⢮⣄⣀⣀⣀⣱⣀   ⠈⣢⢤⡀ ⠘⡄ P ⡇                      
++                    ⢀⡇ p ⡎ s ⡜ ⢳⡀  ⡴⠋⢱   ⢨⠗⢧⠉⠉⠉⠉⣯⣣⠇  ⢱ r ⢸⡀                     
++                    ⢸ m ⢸  n⢰⠁  ⢳⢀⡜   ⣣⠤⣴⠋  ⢣ ⢀⡞⠁⠈⡆   ⡇o  ⡇                     
++                    ⢸ o ⢸ o ⢸   ⡠⢣⡗⠒⠒⢺⡁⠒⢈⡧⠤⠤⢼⢣⠊   ⡇   ⡇ m ⡇                     
++                    ⢸ r ⢸ p ⠸⡀⢀⡼⠁ ⢣  ⣠⠟⠒⢫   ⡜⠁⢧  ⢀⠇   ⡇ p ⡇                     
++                    ⠈⡇ P ⢇ s⢰⢫⣻⣀⣀⣀⣀⢳⢴⡃   ⢇⣠⠞  ⠈⢧ ⡜   ⡸ t ⢸⠁                     
++                     ⢸   ⠘⡄er⠓⠫⡀   ⠉⢏⠉⠉⠉⠙⡳⠓⠒⠒⠒⠢⣮⠟⡆  ⢠⠃   ⡇                      
++                      ⢣ ✦ ⠘⣆ ts⠙⠦⡀  ⠈⢆ ⢀⡜    ⢀⠴⠋⠉  ⣰⠃ ✦ ⡜                       
++                       ⠱⡀tp⠈⠣⡀riF⠈⠑⠢⠤⣸⣶⣯⣀⣀⠤⠔⠊⠁   ⢀⠜⠁rP⢀⠎                        
++                        ⠙⢆mor⠈⠳⢤⡀    ⠘⠒⠋      ⢀⡤⠞⠁pmo⡰⠋                         
++                          ⠑⢤⡀P ✦ ⠑⠒⠤⢄⣀⣀⣀⣀⣀⡠⠤⠒⠊ ✦ t⢀⡤⠊                           
++                            ⠉⠒⢄⡀tpmorP ✦ tpmorP⢀⡠⠒⠉                             
++                               ⠈⠑⠒⠢⠤⣄⣀⣴⣒⣦⣀⣠⠤⠔⠒⠊⠁                                
++                                      ⠙⣶⠋                                       
++                                     ⢠⠃⣿⠘⡄                                      
++                                    ⠠⠃ ⠿ ⠘⠄
+--- a/codex-rs/tui/src/streaming/controller.rs
++++ b/codex-rs/tui/src/streaming/controller.rs
+@@ -565,7 +565,7 @@
+         let pending = self.core.state.collector.pending_source();
+         if !pending.is_empty() {
+             let text = history_cell::sanitize_user_text(pending.into()).into_owned();
+-            lines.push(HyperlinkLine::new(Line::from(text)));
++            lines.push(HyperlinkLine::new(crate::magic_output::glowing_tail(text)));
+         }
+         lines
+     }

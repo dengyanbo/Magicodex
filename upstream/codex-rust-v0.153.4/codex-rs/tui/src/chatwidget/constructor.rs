@@ -12,7 +12,7 @@ impl ChatWidget {
         codex_op_target: CodexOpTarget,
     ) -> Self {
         let ChatWidgetInit {
-            magic_enabled,
+            magic,
             config,
             frame_requester,
             app_event_tx,
@@ -96,8 +96,9 @@ impl ChatWidget {
             pet_http_client.clone(),
         );
         let mut widget = Self {
-            magic_enabled,
+            magic,
             magic_circle: crate::magic_circle::MagicCircle::default(),
+            magic_output: crate::magic_output::MagicOutput::default(),
             app_event_tx: app_event_tx.clone(),
             frame_requester: frame_requester.clone(),
             codex_op_target,

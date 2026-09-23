@@ -295,7 +295,7 @@ impl App {
                     }
                 };
                 let init = crate::chatwidget::ChatWidgetInit {
-                    magic_enabled: Default::default(),
+                    magic: Default::default(),
                     config: config.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
@@ -367,7 +367,7 @@ impl App {
                     return Ok(cancel_session_start(app_server).await);
                 };
                 let init = crate::chatwidget::ChatWidgetInit {
-                    magic_enabled: Default::default(),
+                    magic: Default::default(),
                     config: config.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
@@ -429,7 +429,7 @@ impl App {
                     return Ok(cancel_session_start(app_server).await);
                 };
                 let init = crate::chatwidget::ChatWidgetInit {
-                    magic_enabled: Default::default(),
+                    magic: Default::default(),
                     config: config.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),

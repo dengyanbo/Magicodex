@@ -1,0 +1,778 @@
+--- a/codex-rs/tui/src/app/event_dispatch.rs
++++ b/codex-rs/tui/src/app/event_dispatch.rs
+@@ -212,6 +212,14 @@
+             }
+             AppEvent::RawOutputModeChanged { enabled } => {
+                 self.apply_raw_output_mode(tui, enabled, /*notify*/ false);
++            }
++            AppEvent::MagicDisplayChanged => {
++                let width = tui.terminal.last_known_screen_size.into();
++                if let Err(err) = self.reflow_transcript_now(tui, width) {
++                    self.chat_widget
++                        .add_error_message(format!("Failed to redraw magic output: {err}"));
++                }
++                tui.frame_requester().schedule_frame();
+             }
+             AppEvent::ClearUiAndSubmitUserMessage { text } => {
+                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
+--- a/codex-rs/tui/src/app_event.rs
++++ b/codex-rs/tui/src/app_event.rs
+@@ -411,6 +411,9 @@
+         enabled: bool,
+     },
+ 
++    /// Re-render presentation-only magic outlets without modifying transcript content.
++    MagicDisplayChanged,
++
+     /// Clear the current context, start a fresh session, and submit an initial user message.
+     ///
+     /// This is the Plan Mode handoff path: the previous thread remains resumable, but the model
+--- a/codex-rs/tui/src/chatwidget.rs
++++ b/codex-rs/tui/src/chatwidget.rs
+@@ -555,6 +555,7 @@
+ pub(crate) struct ChatWidget {
+     pub(crate) magic_enabled: Arc<AtomicBool>,
+     magic_circle: crate::magic_circle::MagicCircle,
++    magic_output: crate::magic_output::MagicOutput,
+     app_event_tx: AppEventSender,
+     codex_op_target: CodexOpTarget,
+     bottom_pane: BottomPane,
+--- a/codex-rs/tui/src/chatwidget/constructor.rs
++++ b/codex-rs/tui/src/chatwidget/constructor.rs
+@@ -98,6 +98,7 @@
+         let mut widget = Self {
+             magic_enabled,
+             magic_circle: crate::magic_circle::MagicCircle::default(),
++            magic_output: crate::magic_output::MagicOutput::default(),
+             app_event_tx: app_event_tx.clone(),
+             frame_requester: frame_requester.clone(),
+             codex_op_target,
+--- a/codex-rs/tui/src/chatwidget/input_submission.rs
++++ b/codex-rs/tui/src/chatwidget/input_submission.rs
+@@ -409,6 +409,7 @@
+         self.dismiss_backend_banner_for_new_turn();
+         if render_in_history {
+             self.input_queue.user_turn_pending_start = true;
++            self.magic_output = crate::magic_output::MagicOutput::default();
+         }
+         self.magic_circle
+             .submit(&submitted_message.text, Instant::now());
+--- a/codex-rs/tui/src/chatwidget/magic.rs
++++ b/codex-rs/tui/src/chatwidget/magic.rs
+@@ -4,26 +4,53 @@
+ 
+ impl ChatWidget {
+     pub(super) fn handle_magic_command(&mut self, args: &str) {
+-        match args.trim() {
++        let notice: Box<dyn HistoryCell> = match args.trim() {
+             "on" | "off" => {
+                 let enabled = args.trim() == "on";
+                 self.magic_enabled
+                     .store(enabled, std::sync::atomic::Ordering::Relaxed);
++                self.sync_active_stream_tail();
++                self.app_event_tx.send(AppEvent::MagicDisplayChanged);
+                 let state = if enabled { "on" } else { "off" };
+-                self.add_plain_history_lines(vec![
++                Box::new(PlainHistoryCell::new(vec![
+                     format!("Magic circle: {state} (classic).").into(),
+-                ]);
++                ]))
+             }
+-            "list" => {
+-                self.add_plain_history_lines(
+-                    crate::magic_circle::STYLES
+-                        .iter()
+-                        .map(|(id, description)| format!("{id} — {description}").into())
+-                        .collect(),
+-                );
+-            }
+-            _ => self.add_error_message(crate::magic_circle::USAGE.to_string()),
++            "list" => Box::new(PlainHistoryCell::new(
++                crate::magic_circle::STYLES
++                    .iter()
++                    .map(|(id, description)| format!("{id} — {description}").into())
++                    .collect(),
++            )),
++            _ => Box::new(history_cell::new_error_event(
++                crate::magic_circle::USAGE.to_string(),
++            )),
++        };
++        if self.stream_controller.is_some() {
++            // A notice inside the native streaming-cell run would break final consolidation.
++            self.magic_output.pending_notices.push(notice);
++        } else {
++            self.add_boxed_history(notice);
+         }
+         self.request_redraw();
+     }
++
++    pub(super) fn prepare_magic_output(&mut self) {
++        if self
++            .magic_enabled
++            .load(std::sync::atomic::Ordering::Relaxed)
++            && self.magic_circle.is_active()
++            && self.magic_output.is_answer()
++            && !self.magic_output.emitted
++            && !self.raw_output_mode
++        {
++            self.magic_output.emitted = true;
++            self.add_to_history(crate::magic_output::MagicOutletCell {
++                circle: self.magic_circle.clone(),
++                captured_at: Instant::now(),
++                enabled: self.magic_enabled.clone(),
++            });
++            self.transcript.needs_final_message_separator = false;
++        }
++    }
+ }
+--- a/codex-rs/tui/src/chatwidget/protocol.rs
++++ b/codex-rs/tui/src/chatwidget/protocol.rs
+@@ -355,6 +355,10 @@
+         from_replay: bool,
+     ) {
+         match notification.item {
++            ThreadItem::AgentMessage { phase, .. } if !from_replay => {
++                self.magic_output.phase = phase;
++                self.magic_output.message_started = false;
++            }
+             item @ ThreadItem::CommandExecution { .. } => self.on_command_execution_started(item),
+             ThreadItem::FileChange { id: _, changes, .. } => {
+                 self.on_patch_apply_begin(file_update_changes_to_display(changes));
+--- a/codex-rs/tui/src/chatwidget/rendering.rs
++++ b/codex-rs/tui/src/chatwidget/rendering.rs
+@@ -71,6 +71,7 @@
+         if self
+             .magic_enabled
+             .load(std::sync::atomic::Ordering::Relaxed)
++            && !self.magic_output.emitted
+         {
+             flex.push(
+                 /*flex*/ 1,
+@@ -203,6 +204,7 @@
+         if self
+             .magic_enabled
+             .load(std::sync::atomic::Ordering::Relaxed)
++            && !self.magic_output.emitted
+             && self.magic_circle.is_active()
+             && self.config.animations
+         {
+--- a/codex-rs/tui/src/chatwidget/streaming.rs
++++ b/codex-rs/tui/src/chatwidget/streaming.rs
+@@ -26,7 +26,8 @@
+     fn flush_answer_stream(&mut self, completed_message: Option<&str>) {
+         let had_stream_controller = self.stream_controller.is_some();
+         if let Some(mut controller) = self.stream_controller.take() {
+-            let had_live_tail = controller.has_live_tail();
++            let had_live_tail = controller.has_live_tail()
++                || (self.magic_output.emitted && self.active_cell_is_stream_tail());
+             self.clear_active_stream_tail();
+             let (cell, streamed_source) = controller.finalize();
+             let completed_message_differs = completed_message.is_some_and(|completed| {
+@@ -79,6 +80,9 @@
+                 });
+             }
+         }
++        for notice in std::mem::take(&mut self.magic_output.pending_notices) {
++            self.add_boxed_history(notice);
++        }
+         self.adaptive_chunking.reset();
+         if had_stream_controller && self.stream_controllers_idle() {
+             self.app_event_tx.send(AppEvent::StopCommitAnimation);
+@@ -333,10 +337,12 @@
+         }
+         let parsed = parse_assistant_markdown(&message, self.config.cwd.as_path());
+         if !from_replay {
++            self.magic_output.phase = item.phase.clone();
+             self.magic_circle
+                 .complete_reply(&parsed.visible_markdown, Instant::now());
+         }
+         self.finalize_completed_assistant_message(Some(parsed.visible_markdown.as_str()));
++        self.magic_output.message_started = false;
+         if matches!(item.phase, Some(MessagePhase::FinalAnswer) | None)
+             && !parsed.visible_markdown.is_empty()
+         {
+@@ -455,6 +461,7 @@
+ 
+     #[inline]
+     pub(super) fn handle_streaming_delta(&mut self, delta: String) {
++        let first_text = !self.magic_output.message_started && !delta.trim().is_empty();
+         if !delta.is_empty() {
+             self.mark_safety_buffering_agent_message_started();
+         }
+@@ -486,14 +493,18 @@
+                 inline_visualization_context,
+             ));
+         }
++        if first_text {
++            self.prepare_magic_output();
++            self.magic_output.message_started = true;
++        }
+         if let Some(controller) = self.stream_controller.as_mut()
+             && controller.push(&delta)
+         {
+             self.app_event_tx.send(AppEvent::StartCommitAnimation);
+             self.run_catch_up_commit_tick();
+         }
+-        // Unterminated source is buffered by the controller and cannot change the visible tail.
+-        if delta.contains('\n') && self.sync_active_stream_tail() {
++        // Magic previews unterminated prose; native table holdback remains unchanged.
++        if (delta.contains('\n') || self.magic_output.emitted) && self.sync_active_stream_tail() {
+             self.request_redraw();
+         }
+     }
+@@ -512,7 +523,16 @@
+ 
+     pub(super) fn sync_active_stream_tail(&mut self) -> bool {
+         if let Some(controller) = self.stream_controller.as_ref() {
+-            let tail_lines = controller.current_tail_lines();
++            let magic_preview = self.magic_output.emitted
++                && !self.raw_output_mode
++                && self
++                    .magic_enabled
++                    .load(std::sync::atomic::Ordering::Relaxed);
++            let tail_lines = if magic_preview {
++                controller.magic_tail_lines()
++            } else {
++                controller.current_tail_lines()
++            };
+             if tail_lines.is_empty() {
+                 return self.clear_active_stream_tail();
+             }
+@@ -520,7 +540,11 @@
+             self.bottom_pane.hide_status_indicator();
+             let cell = history_cell::StreamingAgentTailCell::new(
+                 tail_lines,
+-                controller.tail_starts_stream(),
++                if magic_preview {
++                    controller.magic_tail_starts_stream()
++                } else {
++                    controller.tail_starts_stream()
++                },
+             );
+             if self
+                 .transcript
+--- a/codex-rs/tui/src/chatwidget/tests/magic_tests.rs
++++ b/codex-rs/tui/src/chatwidget/tests/magic_tests.rs
+@@ -75,3 +75,224 @@
+     chat.on_agent_message_delta("An actual assistant reply".to_string());
+     assert_ne!(chat.magic_circle, before);
+ }
++
++#[tokio::test]
++async fn magic_answer_starts_below_one_outlet_and_previews_partial_text() {
++    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.thread_id = Some(ThreadId::new());
++    chat.last_rendered_width.set(Some(80));
++    chat.handle_magic_command("on");
++    chat.on_task_started();
++    while events.try_recv().is_ok() {}
++    chat.on_agent_message_delta(" ".to_string());
++    chat.on_agent_message_delta("青蓝".to_string());
++    chat.on_agent_message_delta("星环".to_string());
++    let mut outlets = 0;
++    while let Ok(event) = events.try_recv() {
++        if let AppEvent::InsertHistoryCell(cell) = event {
++            assert!(cell.as_any().is::<crate::magic_output::MagicOutletCell>());
++            outlets += 1;
++        }
++    }
++    assert_eq!(outlets, 1);
++    let tail = chat
++        .transcript
++        .active_cell
++        .as_ref()
++        .expect("live answer preview");
++    let text = tail
++        .display_lines(/*width*/ 80)
++        .iter()
++        .map(Line::to_string)
++        .collect::<Vec<_>>()
++        .join("\n");
++    assert!(text.contains("青蓝星环"));
++    assert!(chat.magic_output.emitted);
++
++    complete_assistant_message(
++        &mut chat,
++        "answer",
++        " 青蓝星环",
++        Some(MessagePhase::FinalAnswer),
++    );
++    let mut canonical = None;
++    while let Ok(event) = events.try_recv() {
++        if let AppEvent::ConsolidateAgentMessage { source, .. } = event {
++            canonical = Some(source);
++        }
++    }
++    assert_eq!(canonical, Some(" 青蓝星环".to_string()));
++    handle_turn_completed(&mut chat, "turn", /*duration_ms*/ None);
++    assert!(
++        chat.magic_output.emitted,
++        "do not place a fresh circle below the completed answer"
++    );
++}
++
++#[tokio::test]
++async fn commentary_keeps_orbiting_until_the_final_answer_begins() {
++    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.thread_id = Some(ThreadId::new());
++    chat.handle_magic_command("on");
++    chat.on_task_started();
++    chat.magic_output.phase = Some(MessagePhase::Commentary);
++    chat.on_agent_message_delta("Working on it".to_string());
++    assert!(!chat.magic_output.emitted);
++    complete_assistant_message(
++        &mut chat,
++        "comment",
++        "Working on it",
++        Some(MessagePhase::Commentary),
++    );
++    while events.try_recv().is_ok() {}
++    chat.magic_output.phase = Some(MessagePhase::FinalAnswer);
++    chat.on_agent_message_delta("Result".to_string());
++    assert!(chat.magic_output.emitted);
++    assert!(
++        matches!(events.try_recv(), Ok(AppEvent::InsertHistoryCell(cell))
++        if cell.as_any().is::<crate::magic_output::MagicOutletCell>())
++    );
++}
++
++#[tokio::test]
++async fn disabled_magic_keeps_native_newline_buffering() {
++    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.on_task_started();
++    while events.try_recv().is_ok() {}
++    chat.on_agent_message_delta("No newline yet".to_string());
++    assert!(!chat.magic_output.emitted);
++    assert!(!chat.active_cell_is_stream_tail());
++    while let Ok(event) = events.try_recv() {
++        if let AppEvent::InsertHistoryCell(cell) = event {
++            assert!(!cell.as_any().is::<crate::magic_output::MagicOutletCell>());
++        }
++    }
++}
++
++#[tokio::test]
++async fn magic_completed_only_answer_emits_outlet_before_canonical_markdown() {
++    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.thread_id = Some(ThreadId::new());
++    chat.handle_magic_command("on");
++    chat.on_task_started();
++    while events.try_recv().is_ok() {}
++    let answer = "**完整回复**\n\n没有 delta，也不能丢字。";
++    complete_assistant_message(&mut chat, "answer", answer, Some(MessagePhase::FinalAnswer));
++    let mut sequence = Vec::new();
++    while let Ok(event) = events.try_recv() {
++        match event {
++            AppEvent::InsertHistoryCell(cell)
++                if cell.as_any().is::<crate::magic_output::MagicOutletCell>() =>
++            {
++                sequence.push("outlet");
++            }
++            AppEvent::ConsolidateAgentMessage { source, .. } => {
++                assert_eq!(source, answer);
++                sequence.push("answer");
++            }
++            _ => {}
++        }
++    }
++    assert_eq!(sequence, vec!["outlet", "answer"]);
++}
++
++#[tokio::test]
++async fn magic_toggle_during_answer_does_not_split_native_stream_cells() {
++    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.thread_id = Some(ThreadId::new());
++    chat.handle_magic_command("on");
++    chat.on_task_started();
++    chat.on_agent_message_delta("First paragraph\n\n".to_string());
++    for _ in 0..10 {
++        chat.on_commit_tick();
++    }
++    chat.on_agent_message_delta("第二段".to_string());
++    while events.try_recv().is_ok() {}
++    chat.handle_magic_command("off");
++    assert!(!chat.active_cell_is_stream_tail());
++    chat.handle_magic_command("on");
++    assert!(chat.active_cell_is_stream_tail());
++    chat.handle_magic_command("list");
++    assert_eq!(chat.magic_output.pending_notices.len(), 3);
++    while let Ok(event) = events.try_recv() {
++        assert!(!matches!(event, AppEvent::InsertHistoryCell(_)));
++    }
++    let answer = "First paragraph\n\n第二段完整";
++    complete_assistant_message(&mut chat, "answer", answer, Some(MessagePhase::FinalAnswer));
++    let mut consolidated = false;
++    let mut notices = 0;
++    while let Ok(event) = events.try_recv() {
++        match event {
++            AppEvent::ConsolidateAgentMessage { source, .. } => {
++                assert_eq!(source, answer);
++                consolidated = true;
++            }
++            AppEvent::InsertHistoryCell(cell) => {
++                assert!(
++                    consolidated,
++                    "notices must follow native markdown consolidation"
++                );
++                assert!(cell.as_any().is::<PlainHistoryCell>());
++                notices += 1;
++            }
++            _ => {}
++        }
++    }
++    assert!(consolidated);
++    assert_eq!(notices, 3);
++}
++
++#[tokio::test]
++async fn magic_enabled_mid_message_waits_for_the_next_answer() {
++    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.thread_id = Some(ThreadId::new());
++    chat.on_task_started();
++    chat.on_agent_message_delta("Already streaming".to_string());
++    chat.handle_magic_command("on");
++    chat.on_agent_message_delta(" without a misplaced outlet".to_string());
++    assert!(!chat.magic_output.emitted);
++    complete_assistant_message(
++        &mut chat,
++        "answer",
++        "Already streaming without a misplaced outlet",
++        Some(MessagePhase::FinalAnswer),
++    );
++    while let Ok(event) = events.try_recv() {
++        if let AppEvent::InsertHistoryCell(cell) = event {
++            assert!(!cell.as_any().is::<crate::magic_output::MagicOutletCell>());
++        }
++    }
++    chat.on_task_started();
++    chat.on_agent_message_delta("Next answer".to_string());
++    assert!(chat.magic_output.emitted);
++}
++
++#[tokio::test]
++async fn magic_interrupted_long_answer_preserves_source_after_resize() {
++    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.thread_id = Some(ThreadId::new());
++    chat.last_rendered_width.set(Some(120));
++    chat.handle_magic_command("on");
++    chat.on_task_started();
++    let mut answer = String::new();
++    for index in 0..40 {
++        let delta = format!("Line {index}: 宽字符和正文需要在窗口缩放后完整保留。\n\n");
++        answer.push_str(&delta);
++        chat.on_agent_message_delta(delta);
++        chat.on_commit_tick();
++    }
++    chat.on_terminal_resize(/*width*/ 60);
++    answer.push_str("尚未结束");
++    chat.on_agent_message_delta("尚未结束".to_string());
++    while events.try_recv().is_ok() {}
++    handle_turn_interrupted(&mut chat, "turn-1");
++    let sources = std::iter::from_fn(|| events.try_recv().ok())
++        .filter_map(|event| match event {
++            AppEvent::ConsolidateAgentMessage { source, .. } => Some(source),
++            _ => None,
++        })
++        .collect::<Vec<_>>();
++    assert_eq!(sources, vec![answer]);
++    assert!(!chat.active_cell_is_stream_tail());
++    assert!(chat.magic_output.emitted);
++}
+--- a/codex-rs/tui/src/chatwidget/turn_runtime.rs
++++ b/codex-rs/tui/src/chatwidget/turn_runtime.rs
+@@ -71,6 +71,7 @@
+     // Raw reasoning uses the same flow as summarized reasoning
+ 
+     pub(super) fn on_task_started(&mut self) {
++        self.magic_output = crate::magic_output::MagicOutput::default();
+         self.magic_circle.begin(Instant::now());
+         self.input_queue.user_turn_pending_start = false;
+         self.reset_safety_buffering_for_turn_start();
+@@ -318,6 +319,9 @@
+     /// and should continue to drive the bottom-pane running indicator while it is in progress.
+     pub(super) fn finalize_turn(&mut self) {
+         self.clear_safety_buffering();
++        if self.magic_output.emitted || !self.magic_output.pending_notices.is_empty() {
++            self.flush_answer_stream_with_separator();
++        }
+         // Drop preview-only stream tail content on any termination path before
+         // failed-cell finalization, so transient tail cells are never persisted.
+         self.clear_active_stream_tail();
+--- a/codex-rs/tui/src/lib.rs
++++ b/codex-rs/tui/src/lib.rs
+@@ -151,6 +151,7 @@
+ pub use live_wrap::RowBuilder;
+ mod local_chatgpt_auth;
+ mod magic_circle;
++mod magic_output;
+ mod managed_new_thread_defaults;
+ mod markdown;
+ mod markdown_render;
+--- a/codex-rs/tui/src/magic_circle.rs
++++ b/codex-rs/tui/src/magic_circle.rs
+@@ -144,7 +144,7 @@
+ }
+ 
+ impl MagicView<'_> {
+-    fn render_at(&self, area: Rect, buf: &mut Buffer, now: Instant) {
++    pub(crate) fn render_at(&self, area: Rect, buf: &mut Buffer, now: Instant) {
+         if area.width < 8 || area.height < 3 {
+             return;
+         }
+--- /dev/null
++++ b/codex-rs/tui/src/magic_output.rs
+@@ -0,0 +1,98 @@
++//! The visual outlet committed immediately before an assistant answer.
++//!
++//! The circle is fixed in scrollback before the first answer fragment, so native streaming,
++//! consolidation and resize reflow cannot move the answer above its source. Decorative lines
++//! are excluded from copy-friendly/raw output and the transcript overlay.
++
++use std::sync::Arc;
++use std::sync::atomic::AtomicBool;
++use std::sync::atomic::Ordering;
++use std::time::Instant;
++
++use codex_protocol::models::MessagePhase;
++use ratatui::buffer::Buffer;
++use ratatui::layout::Rect;
++use ratatui::style::Stylize;
++use ratatui::text::Line;
++use ratatui::text::Span;
++use unicode_width::UnicodeWidthStr;
++
++use crate::history_cell::HistoryCell;
++use crate::magic_circle::MagicCircle;
++use crate::magic_circle::MagicView;
++
++#[derive(Default)]
++pub(crate) struct MagicOutput {
++    pub(crate) phase: Option<MessagePhase>,
++    pub(crate) emitted: bool,
++    pub(crate) message_started: bool,
++    pub(crate) pending_notices: Vec<Box<dyn HistoryCell>>,
++}
++
++impl MagicOutput {
++    pub(crate) fn is_answer(&self) -> bool {
++        !matches!(self.phase, Some(MessagePhase::Commentary))
++    }
++}
++
++#[derive(Debug)]
++pub(crate) struct MagicOutletCell {
++    pub(crate) circle: MagicCircle,
++    pub(crate) captured_at: Instant,
++    pub(crate) enabled: Arc<AtomicBool>,
++}
++
++impl HistoryCell for MagicOutletCell {
++    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
++        if !self.enabled.load(Ordering::Relaxed) || width < 16 {
++            return Vec::new();
++        }
++        let render_width = width.min(120);
++        let area = Rect::new(/*x*/ 0, /*y*/ 0, render_width, /*height*/ 21);
++        let mut buffer = Buffer::empty(area);
++        MagicView {
++            circle: &self.circle,
++            animations_enabled: true,
++        }
++        .render_at(area, &mut buffer, self.captured_at);
++        let margin = " ".repeat(usize::from(width - render_width) / 2);
++        let mut lines = Vec::new();
++        for row in buffer.content().chunks(usize::from(render_width)) {
++            let mut spans = vec![Span::raw(margin.clone())];
++            let mut column = 0;
++            while column < row.len() {
++                let cell = &row[column];
++                spans.push(Span::styled(cell.symbol().to_string(), cell.style()));
++                column += cell.symbol().width().max(1);
++            }
++            lines.push(Line::from(spans));
++        }
++        let blank = |line: &Line<'_>| line.spans.iter().all(|span| span.content.trim().is_empty());
++        while lines.first().is_some_and(blank) {
++            lines.remove(0);
++        }
++        while lines.last().is_some_and(blank) {
++            lines.pop();
++        }
++        let center = " ".repeat(usize::from(width) / 2);
++        lines.push(vec![center.clone().into(), "│".magenta()].into());
++        lines.push(vec![center.into(), "▼".magenta()].into());
++        lines
++    }
++
++    fn raw_lines(&self) -> Vec<Line<'static>> {
++        Vec::new()
++    }
++
++    fn transcript_lines(&self, _width: u16) -> Vec<Line<'static>> {
++        Vec::new()
++    }
++
++    fn has_stable_transcript_height(&self) -> bool {
++        false
++    }
++}
++
++#[cfg(test)]
++#[path = "magic_output_tests.rs"]
++mod tests;
+--- /dev/null
++++ b/codex-rs/tui/src/magic_output_tests.rs
+@@ -0,0 +1,80 @@
++use super::*;
++use pretty_assertions::assert_eq;
++use std::time::Duration;
++
++#[test]
++fn outlet_is_above_the_response_and_is_not_exported_as_text() {
++    let now = Instant::now();
++    let enabled = Arc::new(AtomicBool::default());
++    enabled.store(/*val*/ true, Ordering::Relaxed);
++    let mut circle = MagicCircle::default();
++    circle.submit("Prompt", now);
++    circle.reply_delta("First response", now + Duration::from_secs(/*secs*/ 8));
++    let outlet = MagicOutletCell {
++        circle,
++        captured_at: now + Duration::from_secs(/*secs*/ 8),
++        enabled: enabled.clone(),
++    };
++    let lines = outlet.display_lines(/*width*/ 80);
++    let rendered = lines
++        .iter()
++        .map(Line::to_string)
++        .collect::<Vec<_>>()
++        .join("\n");
++    insta::assert_snapshot!("magic_downward_outlet", rendered);
++    assert!(rendered.trim_end().ends_with('▼'));
++    assert_eq!(outlet.raw_lines(), Vec::<Line<'static>>::new());
++    assert_eq!(
++        outlet.transcript_lines(/*width*/ 80),
++        Vec::<Line<'static>>::new()
++    );
++    enabled.store(/*val*/ false, Ordering::Relaxed);
++    assert_eq!(
++        outlet.display_lines(/*width*/ 80),
++        Vec::<Line<'static>>::new()
++    );
++}
++
++#[test]
++fn magic_preview_advances_without_newlines_and_does_not_duplicate_commits() {
++    use crate::history_cell::HistoryRenderMode;
++    use crate::streaming::controller::StreamController;
++    use crate::terminal_hyperlinks::visible_lines;
++
++    let mut controller =
++        StreamController::new(Some(80), &std::env::temp_dir(), HistoryRenderMode::Rich);
++    controller.push("First paragraph");
++    assert!(controller.current_tail_lines().is_empty());
++    assert_eq!(
++        visible_lines(controller.magic_tail_lines()),
++        vec![Line::from("First paragraph")]
++    );
++    controller.push("\n\n第二段");
++    while controller.queued_lines() > 0 {
++        controller.on_commit_tick();
++    }
++    assert_eq!(
++        visible_lines(controller.magic_tail_lines()),
++        vec![Line::from("第二段")]
++    );
++    let (_, source) = controller.finalize();
++    assert_eq!(source, Some("First paragraph\n\n第二段\n".to_string()));
++}
++
++#[test]
++fn magic_preview_retains_native_table_holdback() {
++    use crate::history_cell::HistoryRenderMode;
++    use crate::streaming::controller::StreamController;
++
++    let mut controller =
++        StreamController::new(Some(80), &std::env::temp_dir(), HistoryRenderMode::Rich);
++    controller.push("| Header |\n| --- |\n| unfinished");
++    assert_eq!(
++        controller.magic_tail_lines(),
++        controller.current_tail_lines()
++    );
++    assert_eq!(
++        controller.magic_tail_starts_stream(),
++        controller.tail_starts_stream()
++    );
++}
+--- a/codex-rs/tui/src/markdown_stream.rs
++++ b/codex-rs/tui/src/markdown_stream.rs
+@@ -98,6 +98,11 @@
+     /// Return the newline-terminated source that is safe to render.
+     pub fn committed_source(&self) -> &str {
+         &self.buffer[..self.committed_source_len]
++    }
++
++    /// Incomplete text for an opt-in provisional display; never advances the commit boundary.
++    pub(crate) fn pending_source(&self) -> &str {
++        &self.buffer[self.committed_source_len..]
+     }
+ 
+     /// Finalize the stream and transfer its complete raw source.
+--- /dev/null
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_output__tests__magic_downward_outlet.snap
+@@ -0,0 +1,17 @@
++---
++source: tui/src/magic_output_tests.rs
++expression: rendered
++---
++                                 ⢀⡠⠖⠚⠉⠉⣉⡉⠉⠉⠓⠢⢄⡀                                 
++                               ⢠⠔⠃⣀⢴⠶⠭⣭⣥⣜⡛⢯⡒⠦⣀⠉⠲⡀                               
++                              ⡰⠃⢠⢞⣡⣮⠖⠋⠉⣁⣈⠉⠙⠻⢶⠚⢷⡄⠉⢆                              
++                             ⣰⠁⢰⡟⢩⠏⢀⡴⠚⠉⠁⠈⠉⠓⢦⡀⠳⣼⠘⡆⠈⣇                             
++                             t ⡇⣸⡏ ⡞        ⢳ F⡱⣼ ⢸                             
++                             p⢰⣱⢻e⢸⡁        ⢈⡇⢈i⢏⠇⢸                             
++                             m ⡟⢎n ⢧        ⡼ ⣸r⢸ ⢸                             
++                             ⢹o⠸⡄⡟o⠈⠳⢤⣀⡀⢀⣀⡤⠞⠁⣰s⣼⠇⢀⠏                             
++                              r⣀⠘⢷⡤p⣦⣄⣀⡉⢉⣀⣠⠴t⢋⡵⠃⢠⠎                              
++                               ⠈P⣀⠉⠲⠬s⣬e⢛r⣒ ⠗⠉⢠⠔⠃                               
++                                 ⠈⠑⠢⢤⣀⣀⣈⣉⣀⣀⡤⠴⠊⠁                                 
++                                        │
++                                        ▼
+--- a/codex-rs/tui/src/streaming/controller.rs
++++ b/codex-rs/tui/src/streaming/controller.rs
+@@ -551,6 +551,36 @@
+     #[inline]
+     pub(crate) fn current_tail_lines(&self) -> Vec<HyperlinkLine> {
+         self.core.current_tail_lines()
++    }
++
++    /// Preview the uncommitted answer below a magic outlet without changing stable markdown.
++    ///
++    /// Tables keep native newline holdback. Other incomplete lines are provisional plain text;
++    /// completion still uses the authoritative markdown source for consolidation.
++    pub(crate) fn magic_tail_lines(&self) -> Vec<HyperlinkLine> {
++        if !self.magic_preview_available() {
++            return self.current_tail_lines();
++        }
++        let mut lines = self.core.render.lines[self.core.emitted_stable_len..].to_vec();
++        let pending = self.core.state.collector.pending_source();
++        if !pending.is_empty() {
++            let text = history_cell::sanitize_user_text(pending.into()).into_owned();
++            lines.push(HyperlinkLine::new(Line::from(text)));
++        }
++        lines
++    }
++
++    pub(crate) fn magic_tail_starts_stream(&self) -> bool {
++        if self.magic_preview_available() {
++            !self.header_emitted
++        } else {
++            self.tail_starts_stream()
++        }
++    }
++
++    fn magic_preview_available(&self) -> bool {
++        matches!(self.core.holdback_scanner.state(), TableHoldbackState::None)
++            && !self.core.state.collector.pending_source().contains('|')
+     }
+ 
+     #[inline]

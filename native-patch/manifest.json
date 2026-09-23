@@ -1,6 +1,11 @@
 {
   "upstream_tag": "rust-v0.153.4",
   "upstream_commit": "042fb41b7c813ac7999105e886b2b7aa715b5081",
+  "native_magic_base_ref": "11cbcbc250297f8b50ea94ac6851b11170c4de9d",
+  "kept_stages": [
+    "0003-downward-reply.patch",
+    "0004-visual-refresh.patch"
+  ],
   "protected_files_unchanged": 950,
   "windows_migration_preparation": {
     "script": "scripts/Prepare-NativeWindows.py",
@@ -15,18 +20,28 @@
     },
     {
       "path": "codex-rs/tui/src/app.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "13c847456f6b787373a06038abcc0b886eff76390fa75b8ac804b106f109ec3c"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "ef643d3844f345cb3fcd27e4c8096bead1dbb13e5bbd9820af5ee7c721af0cfc"
+    },
+    {
+      "path": "codex-rs/tui/src/app/event_dispatch.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "77d28aefdcf6dab6448988de1404f8c859c88f84cd865b6434d1776ad30ceb38"
     },
     {
       "path": "codex-rs/tui/src/app/startup.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "77c957df58d56e901dfaecd7763e2c3177cb74f63a48414bb8476b18f9ff8dd9"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "9d4c575946be1d3730b8b6bffa3f88c605669dae7795304435b4db90d1345c30"
     },
     {
       "path": "codex-rs/tui/src/app/tests.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "4a896d2216dca192440caabb4a4e455847ae23a6fa8ac824347cc2d29f9406d7"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "9ba39c00723b9d5c4cec5ee923d7885ff8adaeeac2e5a38db637e7376cb3d399"
+    },
+    {
+      "path": "codex-rs/tui/src/app_event.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "06bbc9af761dbff175fdc30a18820f526dee6a926d0a9657a140d1e585b267a8"
     },
     {
       "path": "codex-rs/tui/src/bottom_pane/command_popup.rs",
@@ -40,28 +55,33 @@
     },
     {
       "path": "codex-rs/tui/src/chatwidget.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "54f990e69dfb2b708415f18668c03bc05e82b97453c6e0105ae254417a6e3cea"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "cdc2e1496c92e4ddb3aba8ff1360a52e75aa714859c0bbf59276861d3379bd31"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/constructor.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "7be46e3d51af6768aad4c82251f61f67588f0f989471499c5b0c4fbfb9cbb249"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "9988647253e7c39524429af4eaf96e17ba132bb01d9c7ea37d4f7e33b9c3aa51"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/input_submission.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "cb3288ecd795110399f930b4ba24a916ce36ffa2eee83507e2c4f783d6ac3155"
+      "stage": "0003-downward-reply.patch",
+      "sha256": "699d34c06a25a26565deb1c3b8d0d8d575dec7e545a7ad90180d38ce05ee9c49"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/magic.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "1b34349d599e624e42d08d08ec5566efbf27e91db37ce9e1a131e280778bd6ef"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "6cf9b24e5f185316061d1faa1de19b3609d72a65d230378bd2ff425c136c051c"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/protocol.rs",
+      "stage": "0003-downward-reply.patch",
+      "sha256": "0b671f5726490363e82a445ef897231ab5e3a05844a1b4bc09626f099d340380"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/rendering.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "29181b5221b6b2ac586bafa9b252f06738349d8044bce6882b0ef26a88abb8bb"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "8fa0d7ce926d558e6b3a07c96446e61aee923b6c2ae7d89f3726d5376e73366e"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/rendering_tests.rs",
@@ -74,9 +94,14 @@
       "sha256": "369f157fc57cd4fe4ea2bd5f0bb7d87b41240d796f6ac91c1347148604988c35"
     },
     {
+      "path": "codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__magic_style_picker.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "f18696a4713548a086c60ad960ed6b2ff5d9f731ed341b9cb0dc7ccb1bee0d12"
+    },
+    {
       "path": "codex-rs/tui/src/chatwidget/streaming.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "7e45617e7bf7696dc5358afd4b8e0db1841ef5d38a1ef26f4811fccf12e5e393"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "dc4a029cd9d400951350595f6f3b18da286e04feb0dc76945c35cfa07cb1a789"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/tests.rs",
@@ -85,33 +110,33 @@
     },
     {
       "path": "codex-rs/tui/src/chatwidget/tests/helpers.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "989d133c3549133499c97a1174e0ea43509f52f4595cb5beffa8a2669c23d407"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "f0774bd1a94de4c1c331b91a7d8567a83e3a15bfdae8f191b71c187cd58ad8f1"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/tests/magic_tests.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "c46e09136e8ca9c02e65ed481d537654b07d9f79561c7c4e18af0d84d84ff5f8"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "3439943726568e35ac112f8807915c3bc67724bca91ac73452b6411b985b0d4b"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/tests/plan_mode.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "df05f2db4bc9b1d5e00f6526cb0cf4728ad6f84b455efcb62a3b2a9ebaade92b"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "6cb90bd55b33e5e5a7349fc6f4d663528f57a4f4597716c9d9ab3c45237f82f6"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/tests/popups_and_settings.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "12019c81fd07aead962eddcb5cb43db8534768cef909913b93d44f137706424a"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "57c2d7343a2ed8ad370266191e8aed6adbe67ee9ff68889aa3e4535dd095c04b"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/tests/status_and_layout.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "f611f9c877c74c1efde471a501257eaf8aafd194f6b78cdbecd33da5c9bb027b"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "bdfc4a086a99f18579f6225482259e866aa0f9d08a3694a9427b150f0787dfd0"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/turn_runtime.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "41fd6ab02754b3e4163df6242f68aa06e330842fb2bdf57d3a829aa736f52aa5"
+      "stage": "0003-downward-reply.patch",
+      "sha256": "c99f7c82b52af55a70419503804bb555f5e22308dca374f6081bba0a7a4824f7"
     },
     {
       "path": "codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__pnpm_update_available_history_cell_snapshot.snap",
@@ -135,43 +160,203 @@
     },
     {
       "path": "codex-rs/tui/src/lib.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "8f41e837ee0aceca90bb2711d2a0d8637d93463e1be6eefea5c478f58c609dd5"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "29f85c466a535a5351cd15e26dd115449936882577c6ecdb345fb2f72db30ebb"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_canvas.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "e1ce1a129e69a2f3a0b8055f72620a624fff96d1dc7112394e0211e575bb248b"
     },
     {
       "path": "codex-rs/tui/src/magic_circle.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "78c8e5d0b100ff4da2d4e3dfac2bd73b4a0ebb990882d50b2f0b1f5d0f6b9b9f"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "c9ff42eca16de42eac90b559b0901b06c315f6a1105a722561232a4a2c2d01fe"
     },
     {
       "path": "codex-rs/tui/src/magic_circle_tests.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "7c19fe505066a90979d53907f065e48a38be518f08967cb2b88b20649a75fe02"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "6c08ea15b689999532c08bbcb6f70d53e1ef8a1d0f7f5637086b35bb2577914e"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_output.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "4756810ddc81ceba225c25b38870e74f3ece9d150c0c7cebad7f4eb38454449b"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_output_tests.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "412b04e9ba72c582ae8fe6c80836a6a13aebb1102df82f62e783917c01f8bdd0"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_picker.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "dbe0cb6055856600673e2ea9f4a3b4f5ea6fce25cda9b741eafb2bf211a53e86"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_style.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "e68747ad015d1048e240fc548701c906f6120dc8be5cdc406d159e090cb3bbc1"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_style_tests.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "b96916987a4f18c43e16aecf59049f2df3ee0e4ce54508741d8c70483c7ad92c"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "489dbaa1328d4ea76dbdee3f12d9cb802ef7d6cea7b0f1fa65cba46a67fb3f6f"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles/classic.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "50421e28e71a8b47881e4516d58332461f4b80c95ac0f30bae7f329cd80dc253"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles/dark.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "7d8839b539fd8e92335d2986136907a10122303b374261caa2ec3f9a3f10c3a1"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles/earth.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "eaccfd009cd6aea096cac50af647111431ad2636505b896d1b1f4ea29e0471d3"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles/eerie.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "db84266b817b3db0832a03f5b6253b5f5dc51271cfcb68e68ac6365e501ab5c2"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles/fire.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "d9101adc9d838c4d0165580c214c7c05eb6df84dc767ed94b04f1cf5204412c7"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles/holy.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "d6259a89909928da64ca1379d46f00cfd442946a05f6f8c44d49e087468e92e3"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles/tech.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "6ae99c0b03e642b62fcbb60880b27cf54e0640b62260d26501ea290659b9da0b"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles/thunder.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "2a35fd00c5193bee685c28244b42c048b993f8d761edc44dfaf620f05f794ce7"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles/water.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "158e2b5306077f6f76af34bda6cd6d719684bb504e8fe328116ca5e882382c62"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles/wind.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "94e47f4b4bc24ab6f4fe2df2bbfa63b4c3a9fd332dab3486201b24e797e93b8e"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_styles_tests.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "9a5afc2e3f93b18c8985ccb3b0b8a7667234bb4eb0ccd277b2eefa09bcd09594"
+    },
+    {
+      "path": "codex-rs/tui/src/markdown_stream.rs",
+      "stage": "0003-downward-reply.patch",
+      "sha256": "c93215671ec18401b5b64d00297441257429434a9654dab08f4fbba2288042e9"
     },
     {
       "path": "codex-rs/tui/src/slash_command.rs",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "795c8acc2b206ce387000e67c6e0649e32913d71658e1c5d2cbecc046cd8bb4f"
+      "stage": "0005-magic-styles.patch",
+      "sha256": "ffd47ceb87662190c8dd359276b0e9182a641ad53a728c5a924f262675ca6eca"
     },
     {
       "path": "codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_charging.snap",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "0e07b7452ab0dd1b057cb17718a20b8bdf715b32637e0650098c1392acc9d164"
+      "stage": "0004-visual-refresh.patch",
+      "sha256": "4d708882f86695cd595d4f4ce4797141da61185e1a9df01b560abb5e5196dab4"
     },
     {
       "path": "codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_idle.snap",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "9e7c52a98c2388e0f6b788430b8c94228553c1715b81a4056c2a7cedca4a15b1"
+      "stage": "0004-visual-refresh.patch",
+      "sha256": "45749806714924d3f8c4b9cbf7f1a447828b9ad5677c103119a59a0e2a7be9c0"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_long_prompt.snap",
+      "stage": "0004-visual-refresh.patch",
+      "sha256": "4ee2f1435c08cd414dfe7929b6c1fef20e4881da9c6de9bcde574398ac932cf1"
     },
     {
       "path": "codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_reply_orbits.snap",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "4ff7bf494101401cf1b66cb1e124871c2cefc09e012103a7758cbe3db515ddf9"
+      "stage": "0004-visual-refresh.patch",
+      "sha256": "d50c4e4de602c399c46ffb768cf786f838e24ef5f9b6fcbcc113c78a577fb396"
     },
     {
       "path": "codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_submitted.snap",
-      "stage": "0002-native-magic-tui.patch",
-      "sha256": "d24c99f023f6dcc77ab0a2b53e2ae487a59c909631b78381f37a9a74331bd8e0"
+      "stage": "0004-visual-refresh.patch",
+      "sha256": "f047a213960f45e5ba62e6fa59785b4976681c758c81f523c0bd90533ebf1cc8"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_output__tests__magic_downward_outlet.snap",
+      "stage": "0004-visual-refresh.patch",
+      "sha256": "4c50750a5f7d8baa1a73e4b991a93b7c3b97ed6eab6fc52486463c28d687964f"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_classic.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "f1d9f90eef1936791f87524e2b8fc20a47829c34cda32e4e65bbbe7fe193f5c0"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_dark.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "4fcc1f4d731d915f53ba29037f90c3abc26e23c23cab1a8abe5e5013a4bc2c74"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_distances.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "1caa39438542302bd96dc25bf2c1e5fafa3d1e4fd833a534ae9022a38727df18"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_earth.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "d0629a5b58bd4a07edc57ecf5910ebf76699c9e451f765ea2097baac88044fed"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_eerie.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "0498bf9d3533eb06e0a09c56288135d14f219c6444353ad6c034de2480da70bf"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_fire.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "e05da7b6b5c2c5ce1c3c2ed3c3640f00414c7c01d7c08db81d398011198cf73e"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_holy.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "5e25e6b6e9b5eaec01b2496637fcc42c5499987fdf8ac2ce8b78c6e79e7b4158"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_tech.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "9de0adb209cb3f2a74cc1d34597ba5f18d29e13ad38f24dca2fbb4258091e502"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_thunder.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "83a61cb77627efe3fd5228e89f1777da067067a032403c08d7db80e09b36573e"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_water.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "bde700f58828fe76feb46664739e61e99bc626c0c1aa308b595c33f36605cc36"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_styles__tests__magic_style_wind.snap",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "d89ff44232c65db96e8dea00f84c5a29e8fc73746a3bbd563cce73e39bbabe8d"
     },
     {
       "path": "codex-rs/tui/src/snapshots/codex_tui__startup_draft__tests__startup_draft_fresh_session_transitions.snap",
@@ -292,6 +477,11 @@
       "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__transcript_overlay_status_rate_limit_refresh.snap",
       "stage": "0001-release-lock-alignment.patch",
       "sha256": "fea6ed8efdf187850272caf35393e7fd00fa7744754fbe919ae21c9c442edd57"
+    },
+    {
+      "path": "codex-rs/tui/src/streaming/controller.rs",
+      "stage": "0005-magic-styles.patch",
+      "sha256": "50abb4e66b6a32e507ce78da355705bd84053d5e1729ec0205fbf06e8d8833f0"
     }
   ]
 }

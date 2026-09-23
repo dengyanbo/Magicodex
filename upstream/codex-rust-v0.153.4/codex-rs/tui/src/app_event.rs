@@ -411,6 +411,15 @@ pub(crate) enum AppEvent {
         enabled: bool,
     },
 
+    /// Re-render presentation-only magic outlets without modifying transcript content.
+    MagicDisplayChanged,
+
+    /// Redraw after the `/magic list` highlight changed the shared style.
+    MagicStylePreviewed,
+
+    /// Keep a magic circle style chosen in the `/magic list` picker and show the circle.
+    MagicStyleSelected(crate::magic_style::MagicStyle),
+
     /// Clear the current context, start a fresh session, and submit an initial user message.
     ///
     /// This is the Plan Mode handoff path: the previous thread remains resumable, but the model

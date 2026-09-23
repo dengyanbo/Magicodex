@@ -409,6 +409,7 @@ impl ChatWidget {
         self.dismiss_backend_banner_for_new_turn();
         if render_in_history {
             self.input_queue.user_turn_pending_start = true;
+            self.magic_output = crate::magic_output::MagicOutput::default();
         }
         self.magic_circle
             .submit(&submitted_message.text, Instant::now());
