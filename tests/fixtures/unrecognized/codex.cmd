@@ -1,0 +1,3 @@
+@echo off
+echo UNEXPECTED_PROVIDER_EXECUTION 1>&2
+exit /b 99

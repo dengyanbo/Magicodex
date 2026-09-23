@@ -1,0 +1,17 @@
+/target/
+/magicodex.exe
+*.log
+/.venv/
+__pycache__/
+/native/
+/upstream/codex-rust-v0.153.4/target/
+/upstream/codex-rust-v0.153.4/codex-rs/target/
+/upstream/codex-rust-v0.153.4/bazel-*
+/upstream/*.zip
+/.env
+/.env.*
+!/.env.example
+/.codex/
+/*.sqlite
+/*.sqlite-*
+/*.db

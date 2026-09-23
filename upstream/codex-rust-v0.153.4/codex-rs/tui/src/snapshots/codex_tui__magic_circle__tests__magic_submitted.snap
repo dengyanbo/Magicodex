@@ -1,0 +1,19 @@
+---
+source: tui/src/magic_circle_tests.rs
+expression: "snapshot(&circle, now)"
+---
+
+
+
+
+
+
+
+                                   ⣠⠔c⠉o⠉n⠙s⣄
+                                 ⢀l ⢀⡿⠲⢶⡶⠖⢿⡀t⠳e
+                                 l ⢠⣋⡷⠚⠁⠈⠓⢾⣙⡄ ⢹
+                                 a⠴⣿⡁⡇    ⢸⢈⣿⠦⢸C
+                                 m ⠘⣍⡷⢤⡀⢀⡤⢾⣩⠃ r
+                                 ⠘s⡀⠈⣷⠴⠾⠷⠦⣾⠁⢀⡴e
+                                    ⠢⣄⣀⣀⣀⣀⣠⠴a
+                                     a  ⠁e t

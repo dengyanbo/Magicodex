@@ -1,0 +1,297 @@
+{
+  "upstream_tag": "rust-v0.153.4",
+  "upstream_commit": "042fb41b7c813ac7999105e886b2b7aa715b5081",
+  "protected_files_unchanged": 950,
+  "windows_migration_preparation": {
+    "script": "scripts/Prepare-NativeWindows.py",
+    "line_endings": "CRLF",
+    "sql_semantics": "unchanged"
+  },
+  "changes": [
+    {
+      "path": "codex-rs/Cargo.lock",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "a2cb91dfb2e8112bc81d05158fa00b9698e2df8cc1ae0547b5dc5606a44904d3"
+    },
+    {
+      "path": "codex-rs/tui/src/app.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "13c847456f6b787373a06038abcc0b886eff76390fa75b8ac804b106f109ec3c"
+    },
+    {
+      "path": "codex-rs/tui/src/app/startup.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "77c957df58d56e901dfaecd7763e2c3177cb74f63a48414bb8476b18f9ff8dd9"
+    },
+    {
+      "path": "codex-rs/tui/src/app/tests.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "4a896d2216dca192440caabb4a4e455847ae23a6fa8ac824347cc2d29f9406d7"
+    },
+    {
+      "path": "codex-rs/tui/src/bottom_pane/command_popup.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "89ba2e1bea756d270f0ae6a7d85ad593be4c17b12c20c9f67dcf4cda8c8ea56b"
+    },
+    {
+      "path": "codex-rs/tui/src/bottom_pane/slash_commands.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "0362a48b26976567ce9a3e1ea149294383af9ab3ac0dbf68857cc1ac40de9385"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "54f990e69dfb2b708415f18668c03bc05e82b97453c6e0105ae254417a6e3cea"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/constructor.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "7be46e3d51af6768aad4c82251f61f67588f0f989471499c5b0c4fbfb9cbb249"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/input_submission.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "cb3288ecd795110399f930b4ba24a916ce36ffa2eee83507e2c4f783d6ac3155"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/magic.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "1b34349d599e624e42d08d08ec5566efbf27e91db37ce9e1a131e280778bd6ef"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/rendering.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "29181b5221b6b2ac586bafa9b252f06738349d8044bce6882b0ef26a88abb8bb"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/rendering_tests.rs",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "7aef35eb5f527edb34ecddf86c4d3597079e79bda7e71fed6335f761c1b3622f"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/slash_dispatch.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "369f157fc57cd4fe4ea2bd5f0bb7d87b41240d796f6ac91c1347148604988c35"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/streaming.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "7e45617e7bf7696dc5358afd4b8e0db1841ef5d38a1ef26f4811fccf12e5e393"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/tests.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "bcb317d1139252115d24fc5957bf5a68e2dd9eb73008816e1518e2b86c144808"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/tests/helpers.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "989d133c3549133499c97a1174e0ea43509f52f4595cb5beffa8a2669c23d407"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/tests/magic_tests.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "c46e09136e8ca9c02e65ed481d537654b07d9f79561c7c4e18af0d84d84ff5f8"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/tests/plan_mode.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "df05f2db4bc9b1d5e00f6526cb0cf4728ad6f84b455efcb62a3b2a9ebaade92b"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/tests/popups_and_settings.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "12019c81fd07aead962eddcb5cb43db8534768cef909913b93d44f137706424a"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/tests/status_and_layout.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "f611f9c877c74c1efde471a501257eaf8aafd194f6b78cdbecd33da5c9bb027b"
+    },
+    {
+      "path": "codex-rs/tui/src/chatwidget/turn_runtime.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "41fd6ab02754b3e4163df6242f68aa06e330842fb2bdf57d3a829aa736f52aa5"
+    },
+    {
+      "path": "codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__pnpm_update_available_history_cell_snapshot.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "566adc54dfc6269008cb1079b47658d3b11d1f70415dd8d465daf054c6d81fe6"
+    },
+    {
+      "path": "codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__standalone_unix_update_available_history_cell_snapshot.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "910b47653ff1bc3f331bfe6eab25809b98871c8cdaddaa83ef3fc230a6d420bc"
+    },
+    {
+      "path": "codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__standalone_windows_update_available_history_cell_snapshot.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "d7755aa59263e96ea1dca1bed864e72dcfe3633a18e74d8fe84dfbb2076c6ee5"
+    },
+    {
+      "path": "codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__vite_plus_update_available_history_cell_snapshot.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "9805592d44f2a83c4324d430c88ba2b3d81b2dfddf654e25c2c4bedb130121c8"
+    },
+    {
+      "path": "codex-rs/tui/src/lib.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "8f41e837ee0aceca90bb2711d2a0d8637d93463e1be6eefea5c478f58c609dd5"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_circle.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "78c8e5d0b100ff4da2d4e3dfac2bd73b4a0ebb990882d50b2f0b1f5d0f6b9b9f"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_circle_tests.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "7c19fe505066a90979d53907f065e48a38be518f08967cb2b88b20649a75fe02"
+    },
+    {
+      "path": "codex-rs/tui/src/slash_command.rs",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "795c8acc2b206ce387000e67c6e0649e32913d71658e1c5d2cbecc046cd8bb4f"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_charging.snap",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "0e07b7452ab0dd1b057cb17718a20b8bdf715b32637e0650098c1392acc9d164"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_idle.snap",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "9e7c52a98c2388e0f6b788430b8c94228553c1715b81a4056c2a7cedca4a15b1"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_reply_orbits.snap",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "4ff7bf494101401cf1b66cb1e124871c2cefc09e012103a7758cbe3db515ddf9"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_submitted.snap",
+      "stage": "0002-native-magic-tui.patch",
+      "sha256": "d24c99f023f6dcc77ab0a2b53e2ae487a59c909631b78381f37a9a74331bd8e0"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__startup_draft__tests__startup_draft_fresh_session_transitions.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "f0370896e8c2718a21b1ad23cccc27cbf2ddbb48e0ab49cf3470ae2d8b775222"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__startup_draft__tests__startup_draft_full_frames.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "1a51ab1b8d8fe0d9891db1c1222001fa78ed23e255df3ade0e8d313164985878"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__startup_draft__tests__startup_draft_onboarding_transition.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "bf6b3d82c41e7eca63f370a604b8a5a3e6670d3feddc11f775c3e4f3ba3e5ed1"
+    },
+    {
+      "path": "codex-rs/tui/src/snapshots/codex_tui__update_prompt__tests__update_prompt_modal.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "ba07c9568892b506262b9e3b3ae8b4c7962d757a36d359c24927b103bf168875"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_cached_limits_hide_credits_without_flag.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "30ed5f2acda78502aab3d08765c690864ad2c959ad441c055271058254f1e943"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_includes_credits_and_limits.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "896bb0c4a9eba7237c21bf6f6f0f6910b3d8f7a249ca5cf078db97d7440f625e"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_includes_enterprise_monthly_credit_limit.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "8bd25136e3f2a212032d105b466fb9ba2b2e791e0e70586360f72bffd741502b"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_includes_forked_from.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "094e1200f867ba1653f4fa16eb425142a702e018cb3e6128c19bbb35b95d6018"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_includes_monthly_limit.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "10e0815d0dd585a255b16313ac53de8b7f8c477b8da1dae8c4e078bee62e9981"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_includes_reasoning_details.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "b2500f6c181b8d00dfddb3a9225f2e3bc24976d704008782df50be2599e2849d"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_shows_active_user_defined_profile.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "fdb3d941480f9d8f4f0fce5318e0af16656259578a0000178aafe190c5391615"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_shows_auto_review_permissions.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "07d0caae8f2ae3879ca604e097f766813bb511af04c20764f6ba84ba9b054683"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_shows_chatgpt_plan_without_email.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "1112d147d9359916a9fb059edb88b03bc93c1c349012998c88fa1ce698f086b4"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_shows_missing_limits_message.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "87dd453abb0ebecb45ee6107b9fc4a22c762f556a51ef90258665959d0343798"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_shows_refreshing_limits_notice.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "d96834f0b5259232d08ed089bd190f5cdb8c0daec91857764561db56e272aa2a"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_shows_stale_limits_message.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "c4dee575ba62945ebdd837682ed8c6233acbd9627b1671fbd01f2bd767cd92c0"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_shows_unavailable_limits_message.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "4e2c0c559228f58c4dd1809b88509a373ca58b95abc2876884a0d1b93c86cda5"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_treats_refreshing_empty_limits_as_unavailable.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "4e2c0c559228f58c4dd1809b88509a373ca58b95abc2876884a0d1b93c86cda5"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_truncates_halfwidth_kana_in_narrow_terminal.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "9d116f75aa1bd1add7e2d29c7a5951aabb0f405525bf74ea9c36aa0e0dd1d67e"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_truncates_in_narrow_terminal.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "23b636ad8db5d9e6f5f5d28603905f09742e51a95abf4f143b16215b88531f0e"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_uses_default_reasoning_when_config_empty.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "9723f24b168d1fe2b1d5a47304fa513583d6afe0bbc67059e1607cfee434438a"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_uses_generic_limit_labels_for_unsupported_windows.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "f7eb2ded0234a82c96ed1a935fbe1e62148f874759a742dcdfe4938cab78d7f2"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__status_snapshot_wraps_enterprise_monthly_credit_details_in_narrow_terminal.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "7fe857d82b5200362316195af3d85d652c24e538558623f6f732e2059bf009ec"
+    },
+    {
+      "path": "codex-rs/tui/src/status/snapshots/codex_tui__status__tests__transcript_overlay_status_rate_limit_refresh.snap",
+      "stage": "0001-release-lock-alignment.patch",
+      "sha256": "fea6ed8efdf187850272caf35393e7fd00fa7744754fbe919ae21c9c442edd57"
+    }
+  ]
+}

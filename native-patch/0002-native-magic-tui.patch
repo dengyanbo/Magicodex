@@ -1,0 +1,943 @@
+--- a/codex-rs/tui/src/app.rs
++++ b/codex-rs/tui/src/app.rs
+@@ -779,6 +779,7 @@
+         initial_user_message: Option<crate::chatwidget::UserMessage>,
+     ) -> crate::chatwidget::ChatWidgetInit {
+         crate::chatwidget::ChatWidgetInit {
++            magic_enabled: self.chat_widget.magic_enabled.clone(),
+             config: cfg,
+             frame_requester: tui.frame_requester(),
+             app_event_tx: self.app_event_tx.clone(),
+--- a/codex-rs/tui/src/app/startup.rs
++++ b/codex-rs/tui/src/app/startup.rs
+@@ -295,6 +295,7 @@
+                     }
+                 };
+                 let init = crate::chatwidget::ChatWidgetInit {
++                    magic_enabled: Default::default(),
+                     config: config.clone(),
+                     frame_requester: tui.frame_requester(),
+                     app_event_tx: app_event_tx.clone(),
+@@ -366,6 +367,7 @@
+                     return Ok(cancel_session_start(app_server).await);
+                 };
+                 let init = crate::chatwidget::ChatWidgetInit {
++                    magic_enabled: Default::default(),
+                     config: config.clone(),
+                     frame_requester: tui.frame_requester(),
+                     app_event_tx: app_event_tx.clone(),
+@@ -427,6 +429,7 @@
+                     return Ok(cancel_session_start(app_server).await);
+                 };
+                 let init = crate::chatwidget::ChatWidgetInit {
++                    magic_enabled: Default::default(),
+                     config: config.clone(),
+                     frame_requester: tui.frame_requester(),
+                     app_event_tx: app_event_tx.clone(),
+--- a/codex-rs/tui/src/app/tests.rs
++++ b/codex-rs/tui/src/app/tests.rs
+@@ -561,6 +561,7 @@
+     let config = app.config.clone();
+     let model = get_model_offline_for_tests(config.model.as_deref());
+     app.chat_widget = ChatWidget::new_with_app_event(ChatWidgetInit {
++        magic_enabled: app.chat_widget.magic_enabled.clone(),
+         config,
+         frame_requester: crate::tui::FrameRequester::test_dummy(),
+         app_event_tx: app.app_event_tx.clone(),
+@@ -7604,6 +7605,7 @@
+     );
+ 
+     let replacement = ChatWidget::new_with_app_event(ChatWidgetInit {
++        magic_enabled: app.chat_widget.magic_enabled.clone(),
+         config: app.config.clone(),
+         frame_requester: crate::tui::FrameRequester::test_dummy(),
+         app_event_tx: app.app_event_tx.clone(),
+--- a/codex-rs/tui/src/bottom_pane/command_popup.rs
++++ b/codex-rs/tui/src/bottom_pane/command_popup.rs
+@@ -386,7 +386,8 @@
+                 "model".to_string(),
+                 "memories".to_string(),
+                 "mention".to_string(),
+-                "mcp".to_string()
++                "mcp".to_string(),
++                "magic".to_string()
+             ]
+         );
+     }
+--- a/codex-rs/tui/src/bottom_pane/slash_commands.rs
++++ b/codex-rs/tui/src/bottom_pane/slash_commands.rs
+@@ -312,6 +312,7 @@
+                 SlashCommand::Status,
+                 SlashCommand::Pwd,
+                 SlashCommand::Usage,
++                SlashCommand::Magic,
+             ]
+         );
+     }
+--- a/codex-rs/tui/src/chatwidget.rs
++++ b/codex-rs/tui/src/chatwidget.rs
+@@ -407,6 +407,7 @@
+ mod recap;
+ mod reset_credits;
+ pub(crate) use self::rate_limits::limit_label_for_window;
++mod magic;
+ mod reasoning_shortcuts;
+ mod rendering;
+ mod replay;
+@@ -503,6 +504,7 @@
+ 
+ /// Common initialization parameters shared by all `ChatWidget` constructors.
+ pub(crate) struct ChatWidgetInit {
++    pub(crate) magic_enabled: Arc<AtomicBool>,
+     pub(crate) config: Config,
+     pub(crate) frame_requester: FrameRequester,
+     pub(crate) app_event_tx: AppEventSender,
+@@ -551,6 +553,8 @@
+ /// (which view gets Ctrl+C), while `ChatWidget` owns process-level decisions such as interrupting
+ /// active work, arming the double-press quit shortcut, and requesting shutdown-first exit.
+ pub(crate) struct ChatWidget {
++    pub(crate) magic_enabled: Arc<AtomicBool>,
++    magic_circle: crate::magic_circle::MagicCircle,
+     app_event_tx: AppEventSender,
+     codex_op_target: CodexOpTarget,
+     bottom_pane: BottomPane,
+--- a/codex-rs/tui/src/chatwidget/constructor.rs
++++ b/codex-rs/tui/src/chatwidget/constructor.rs
+@@ -12,6 +12,7 @@
+         codex_op_target: CodexOpTarget,
+     ) -> Self {
+         let ChatWidgetInit {
++            magic_enabled,
+             config,
+             frame_requester,
+             app_event_tx,
+@@ -95,6 +96,8 @@
+             pet_http_client.clone(),
+         );
+         let mut widget = Self {
++            magic_enabled,
++            magic_circle: crate::magic_circle::MagicCircle::default(),
+             app_event_tx: app_event_tx.clone(),
+             frame_requester: frame_requester.clone(),
+             codex_op_target,
+--- a/codex-rs/tui/src/chatwidget/input_submission.rs
++++ b/codex-rs/tui/src/chatwidget/input_submission.rs
+@@ -410,6 +410,8 @@
+         if render_in_history {
+             self.input_queue.user_turn_pending_start = true;
+         }
++        self.magic_circle
++            .submit(&submitted_message.text, Instant::now());
+ 
+         // Persist the submitted text to cross-session message history. Mentions are encoded into
+         // placeholder syntax so recall can reconstruct the mention bindings in a future session.
+--- /dev/null
++++ b/codex-rs/tui/src/chatwidget/magic.rs
+@@ -0,0 +1,29 @@
++//! Local slash-command control for the presentation-only magic circle.
++
++use super::*;
++
++impl ChatWidget {
++    pub(super) fn handle_magic_command(&mut self, args: &str) {
++        match args.trim() {
++            "on" | "off" => {
++                let enabled = args.trim() == "on";
++                self.magic_enabled
++                    .store(enabled, std::sync::atomic::Ordering::Relaxed);
++                let state = if enabled { "on" } else { "off" };
++                self.add_plain_history_lines(vec![
++                    format!("Magic circle: {state} (classic).").into(),
++                ]);
++            }
++            "list" => {
++                self.add_plain_history_lines(
++                    crate::magic_circle::STYLES
++                        .iter()
++                        .map(|(id, description)| format!("{id} — {description}").into())
++                        .collect(),
++                );
++            }
++            _ => self.add_error_message(crate::magic_circle::USAGE.to_string()),
++        }
++        self.request_redraw();
++    }
++}
+--- a/codex-rs/tui/src/chatwidget/rendering.rs
++++ b/codex-rs/tui/src/chatwidget/rendering.rs
+@@ -68,6 +68,18 @@
+                 })),
+             );
+         }
++        if self
++            .magic_enabled
++            .load(std::sync::atomic::Ordering::Relaxed)
++        {
++            flex.push(
++                /*flex*/ 1,
++                RenderableItem::Owned(Box::new(crate::magic_circle::MagicView {
++                    circle: &self.magic_circle,
++                    animations_enabled: self.config.animations,
++                })),
++            );
++        }
+         flex.push(
+             /*flex*/ 0,
+             self.bottom_pane
+@@ -188,6 +200,15 @@
+     fn render(&self, area: Rect, buf: &mut Buffer) {
+         self.as_renderable().render(area, buf);
+         self.note_rendered_width(area.width);
++        if self
++            .magic_enabled
++            .load(std::sync::atomic::Ordering::Relaxed)
++            && self.magic_circle.is_active()
++            && self.config.animations
++        {
++            self.frame_requester
++                .schedule_frame_in(Duration::from_millis(/*millis*/ 80));
++        }
+     }
+ 
+     fn desired_height(&self, width: u16) -> u16 {
+--- a/codex-rs/tui/src/chatwidget/slash_dispatch.rs
++++ b/codex-rs/tui/src/chatwidget/slash_dispatch.rs
+@@ -163,6 +163,7 @@
+         }
+ 
+         match cmd {
++            SlashCommand::Magic => self.handle_magic_command(""),
+             SlashCommand::Feedback => {
+                 if !self.config.feedback_enabled {
+                     let params = crate::bottom_pane::feedback_disabled_params();
+@@ -710,6 +711,7 @@
+         } = prepared;
+         let trimmed = args.trim();
+         match cmd {
++            SlashCommand::Magic => self.handle_magic_command(trimmed),
+             SlashCommand::Export if trimmed.is_empty() => self.show_transcript_export_popup(),
+             SlashCommand::Export => {
+                 self.set_queue_autosend_suppressed(/*suppressed*/ true);
+@@ -1147,6 +1149,7 @@
+             | SlashCommand::Rollout
+             | SlashCommand::Copy
+             | SlashCommand::Raw
++            | SlashCommand::Magic
+             | SlashCommand::Vim
+             | SlashCommand::Diff
+             | SlashCommand::App
+--- a/codex-rs/tui/src/chatwidget/streaming.rs
++++ b/codex-rs/tui/src/chatwidget/streaming.rs
+@@ -139,6 +139,7 @@
+     }
+ 
+     pub(super) fn on_agent_message_delta(&mut self, delta: String) {
++        self.magic_circle.reply_delta(&delta, Instant::now());
+         self.handle_streaming_delta(delta);
+     }
+ 
+@@ -146,6 +147,7 @@
+         if self.active_mode_kind() != ModeKind::Plan {
+             return;
+         }
++        self.magic_circle.reply_delta(&delta, Instant::now());
+         if !self.transcript.plan_item_active {
+             self.transcript.plan_item_active = true;
+             self.transcript.plan_delta_buffer.clear();
+@@ -330,6 +332,10 @@
+             }
+         }
+         let parsed = parse_assistant_markdown(&message, self.config.cwd.as_path());
++        if !from_replay {
++            self.magic_circle
++                .complete_reply(&parsed.visible_markdown, Instant::now());
++        }
+         self.finalize_completed_assistant_message(Some(parsed.visible_markdown.as_str()));
+         if matches!(item.phase, Some(MessagePhase::FinalAnswer) | None)
+             && !parsed.visible_markdown.is_empty()
+--- a/codex-rs/tui/src/chatwidget/tests.rs
++++ b/codex-rs/tui/src/chatwidget/tests.rs
+@@ -246,6 +246,8 @@
+ mod guardian;
+ pub(crate) mod helpers;
+ mod history_replay;
++#[path = "tests/magic_tests.rs"]
++mod magic;
+ mod mcp_startup;
+ #[path = "tests/misalignment_policy_tests.rs"]
+ mod misalignment_policy;
+--- a/codex-rs/tui/src/chatwidget/tests/helpers.rs
++++ b/codex-rs/tui/src/chatwidget/tests/helpers.rs
+@@ -186,6 +186,7 @@
+     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
+     let model_catalog = test_model_catalog(&cfg);
+     let common = ChatWidgetInit {
++        magic_enabled: Default::default(),
+         config: cfg,
+         frame_requester,
+         app_event_tx,
+--- /dev/null
++++ b/codex-rs/tui/src/chatwidget/tests/magic_tests.rs
+@@ -0,0 +1,77 @@
++use super::*;
++use pretty_assertions::assert_eq;
++
++fn composer_buffer(chat: &ChatWidget) -> Buffer {
++    let composer = chat
++        .bottom_pane
++        .as_renderable_with_composer_right_reserve(/*composer_right_reserve*/ 0);
++    let area = Rect::new(
++        /*x*/ 0,
++        /*y*/ 0,
++        /*width*/ 100,
++        composer.desired_height(/*width*/ 100),
++    );
++    let mut buffer = Buffer::empty(area);
++    composer.render(area, &mut buffer);
++    buffer
++}
++
++#[tokio::test]
++async fn magic_commands_are_local_and_preserve_the_native_composer() {
++    let (mut chat, _events, mut ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    while ops.try_recv().is_ok() {}
++    let before = composer_buffer(&chat);
++    for command in ["on", "list", "off"] {
++        chat.dispatch_command_with_args(SlashCommand::Magic, command.to_string(), Vec::new());
++        assert_eq!(composer_buffer(&chat), before);
++    }
++    chat.on_task_started();
++    chat.dispatch_command_with_args(SlashCommand::Magic, "on".to_string(), Vec::new());
++    assert!(
++        chat.magic_enabled
++            .load(std::sync::atomic::Ordering::Relaxed)
++    );
++    chat.dispatch_command_with_args(SlashCommand::Magic, "off".to_string(), Vec::new());
++    assert!(
++        !chat
++            .magic_enabled
++            .load(std::sync::atomic::Ordering::Relaxed)
++    );
++    while let Ok(op) = ops.try_recv() {
++        assert!(
++            !matches!(op, Op::UserTurn { .. }),
++            "local magic command reached the model"
++        );
++    }
++}
++
++#[tokio::test]
++async fn magic_does_not_change_user_prompt_contents() {
++    let (mut chat, _events, mut ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.dispatch_command_with_args(SlashCommand::Magic, "on".to_string(), Vec::new());
++    chat.thread_id = Some(ThreadId::new());
++    let text = "原始 prompt\nKeep every character.";
++    chat.submit_user_message(text.into());
++    let Op::UserTurn { items, .. } = next_submit_op(&mut ops) else {
++        panic!("expected a native user turn");
++    };
++    assert_eq!(
++        items,
++        vec![UserInput::Text {
++            text: text.to_string(),
++            text_elements: Vec::new(),
++        }]
++    );
++}
++
++#[tokio::test]
++async fn reasoning_does_not_feed_or_freeze_the_magic_circle() {
++    let (mut chat, _events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.dispatch_command_with_args(SlashCommand::Magic, "on".to_string(), Vec::new());
++    chat.on_task_started();
++    let before = chat.magic_circle.clone();
++    chat.on_agent_reasoning_delta("PRIVATE_REASONING_DO_NOT_RENDER".to_string());
++    assert_eq!(chat.magic_circle, before);
++    chat.on_agent_message_delta("An actual assistant reply".to_string());
++    assert_ne!(chat.magic_circle, before);
++}
+--- a/codex-rs/tui/src/chatwidget/tests/plan_mode.rs
++++ b/codex-rs/tui/src/chatwidget/tests/plan_mode.rs
+@@ -1630,6 +1630,7 @@
+     let resolved_model = get_model_offline_for_tests(cfg.model.as_deref());
+     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
+     let init = ChatWidgetInit {
++        magic_enabled: Default::default(),
+         config: cfg.clone(),
+         frame_requester: FrameRequester::test_dummy(),
+         app_event_tx: AppEventSender::new(unbounded_channel::<AppEvent>().0),
+--- a/codex-rs/tui/src/chatwidget/tests/popups_and_settings.rs
++++ b/codex-rs/tui/src/chatwidget/tests/popups_and_settings.rs
+@@ -35,6 +35,7 @@
+     let resolved_model = get_model_offline_for_tests(cfg.model.as_deref());
+     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
+     let init = ChatWidgetInit {
++        magic_enabled: Default::default(),
+         config: cfg.clone(),
+         frame_requester: FrameRequester::test_dummy(),
+         app_event_tx: AppEventSender::new(unbounded_channel::<AppEvent>().0),
+--- a/codex-rs/tui/src/chatwidget/tests/status_and_layout.rs
++++ b/codex-rs/tui/src/chatwidget/tests/status_and_layout.rs
+@@ -489,6 +489,7 @@
+     let resolved_model = get_model_offline_for_tests(cfg.model.as_deref());
+     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
+     let init = ChatWidgetInit {
++        magic_enabled: Default::default(),
+         config: cfg.clone(),
+         frame_requester: FrameRequester::test_dummy(),
+         app_event_tx: tx,
+--- a/codex-rs/tui/src/chatwidget/turn_runtime.rs
++++ b/codex-rs/tui/src/chatwidget/turn_runtime.rs
+@@ -31,6 +31,9 @@
+     /// The bottom pane only has one running flag, but this module treats it as a derived state of
+     /// both the agent turn lifecycle and MCP startup lifecycle.
+     pub(super) fn update_task_running_state(&mut self) {
++        if !self.turn_lifecycle.agent_turn_running && !self.input_queue.user_turn_pending_start {
++            self.magic_circle.finish();
++        }
+         self.bottom_pane.set_task_running(
+             self.turn_lifecycle.agent_turn_running
+                 || self.review.is_review_mode
+@@ -68,6 +71,7 @@
+     // Raw reasoning uses the same flow as summarized reasoning
+ 
+     pub(super) fn on_task_started(&mut self) {
++        self.magic_circle.begin(Instant::now());
+         self.input_queue.user_turn_pending_start = false;
+         self.reset_safety_buffering_for_turn_start();
+         self.turn_lifecycle.start(Instant::now());
+--- a/codex-rs/tui/src/lib.rs
++++ b/codex-rs/tui/src/lib.rs
+@@ -150,6 +150,7 @@
+ pub(crate) mod live_wrap;
+ pub use live_wrap::RowBuilder;
+ mod local_chatgpt_auth;
++mod magic_circle;
+ mod managed_new_thread_defaults;
+ mod markdown;
+ mod markdown_render;
+--- /dev/null
++++ b/codex-rs/tui/src/magic_circle.rs
+@@ -0,0 +1,273 @@
++//! Optional, presentation-only magic circle. No text from this module enters model context.
++
++use std::collections::VecDeque;
++use std::f64::consts::TAU;
++use std::time::Duration;
++use std::time::Instant;
++
++use ratatui::buffer::Buffer;
++use ratatui::layout::Rect;
++use ratatui::style::Color;
++use ratatui::style::Style;
++use unicode_segmentation::UnicodeSegmentation;
++use unicode_width::UnicodeWidthStr;
++
++use crate::history_cell::sanitize_user_text;
++use crate::render::renderable::Renderable;
++
++pub(crate) const STYLES: &[(&str, &str)] = &[("classic", "Concentric circles with orbiting text")];
++pub(crate) const USAGE: &str = "Usage: /magic on|off|list";
++const TEXT_LIMIT: usize = 192;
++
++#[derive(Clone, Debug, Default, PartialEq)]
++pub(crate) struct MagicCircle {
++    started: Option<Instant>,
++    first_reply: Option<Duration>,
++    prompt: String,
++    current_reply: String,
++    completed_replies: VecDeque<String>,
++}
++
++#[derive(Debug, PartialEq)]
++struct Geometry {
++    radius: f64,
++    rings: usize,
++}
++
++impl MagicCircle {
++    pub(crate) fn submit(&mut self, text: &str, now: Instant) {
++        self.begin(now);
++        self.prompt = display_fragment(text);
++    }
++
++    pub(crate) fn begin(&mut self, now: Instant) {
++        if self.started.is_none() {
++            self.started = Some(now);
++            self.first_reply = None;
++            self.current_reply.clear();
++            self.completed_replies.clear();
++        }
++    }
++
++    pub(crate) fn reply_delta(&mut self, delta: &str, now: Instant) {
++        if let Some(started) = self.started {
++            let fragment = display_fragment(delta);
++            if !fragment.trim().is_empty() {
++                self.first_reply
++                    .get_or_insert(now.saturating_duration_since(started));
++            }
++            self.current_reply.push_str(&fragment);
++            self.current_reply = self
++                .current_reply
++                .graphemes(/*is_extended*/ true)
++                .rev()
++                .take(TEXT_LIMIT)
++                .collect::<Vec<_>>()
++                .into_iter()
++                .rev()
++                .collect();
++        }
++    }
++
++    pub(crate) fn complete_reply(&mut self, text: &str, now: Instant) {
++        if self.started.is_some() {
++            self.reply_delta(text, now);
++            let text = display_fragment(text);
++            if !text.trim().is_empty() {
++                self.completed_replies.push_back(text);
++                while self.completed_replies.len() > 2 {
++                    self.completed_replies.pop_front();
++                }
++            }
++            self.current_reply.clear();
++        }
++    }
++
++    pub(crate) fn finish(&mut self) {
++        *self = Self::default();
++    }
++
++    pub(crate) fn is_active(&self) -> bool {
++        self.started.is_some()
++    }
++
++    fn geometry(&self, now: Instant) -> Geometry {
++        let Some(started) = self.started else {
++            return Geometry {
++                radius: 4.0,
++                rings: 1,
++            };
++        };
++        let age = self
++            .first_reply
++            .unwrap_or_else(|| now.saturating_duration_since(started))
++            .as_secs_f64();
++        Geometry {
++            radius: (14.0 + age).min(40.0),
++            rings: 2 + (age / 4.0).floor().min(5.0) as usize,
++        }
++    }
++}
++
++fn display_fragment(text: &str) -> String {
++    sanitize_user_text(text.into())
++        .replace(['\n', '\r', '\t'], " ")
++        .graphemes(/*is_extended*/ true)
++        .filter(|glyph| {
++            !glyph
++                .chars()
++                .any(|c| matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'))
++        })
++        .take(TEXT_LIMIT)
++        .collect()
++}
++
++pub(crate) struct MagicView<'a> {
++    pub(crate) circle: &'a MagicCircle,
++    pub(crate) animations_enabled: bool,
++}
++
++impl Renderable for MagicView<'_> {
++    fn desired_height(&self, width: u16) -> u16 {
++        if width < 16 {
++            0
++        } else if self.circle.is_active() {
++            21
++        } else {
++            3
++        }
++    }
++
++    fn render(&self, area: Rect, buf: &mut Buffer) {
++        self.render_at(area, buf, Instant::now());
++    }
++}
++
++impl MagicView<'_> {
++    fn render_at(&self, area: Rect, buf: &mut Buffer, now: Instant) {
++        if area.width < 8 || area.height < 3 {
++            return;
++        }
++        let width = area.width.min(100);
++        let height = area.height.min(21);
++        let area = Rect::new(
++            area.x + (area.width - width) / 2,
++            area.y + (area.height - height) / 2,
++            width,
++            height,
++        );
++        let geometry = self.circle.geometry(now);
++        let radius = geometry
++            .radius
++            .min(f64::from(height * 2 - 2))
++            .min(f64::from(width - 2));
++        let rotation = if self.animations_enabled {
++            self.circle.started.map_or(/*default*/ 0.0, |started| {
++                now.saturating_duration_since(started).as_secs_f64() * 0.3
++            })
++        } else {
++            0.0
++        };
++        let mut pixels = vec![0_u8; usize::from(width) * usize::from(height)];
++        let cx = (f64::from(width) * 2.0 - 1.0) / 2.0;
++        let cy = (f64::from(height) * 4.0 - 1.0) / 2.0;
++        let mut plot = |x: f64, y: f64| {
++            let x = (x + cx).round() as i32;
++            let y = (y + cy).round() as i32;
++            if x >= 0 && y >= 0 && x < i32::from(width) * 2 && y < i32::from(height) * 4 {
++                let bits = [[0, 3], [1, 4], [2, 5], [6, 7]];
++                pixels[(y as usize / 4) * usize::from(width) + x as usize / 2] |=
++                    1 << bits[y as usize % 4][x as usize % 2];
++            }
++        };
++        for ring in 0..geometry.rings {
++            let r = radius * (1.0 - ring as f64 * 0.72 / geometry.rings as f64);
++            for step in 0..240 {
++                let theta = f64::from(step) * TAU / 240.0 + rotation;
++                plot(r * theta.cos(), r * theta.sin());
++            }
++        }
++        if self.circle.is_active() {
++            for vertex in 0..geometry.rings * 2 + 2 {
++                let a = vertex as f64 * TAU / (geometry.rings * 2 + 2) as f64 + rotation;
++                let b = a + TAU * 2.0 / (geometry.rings * 2 + 2) as f64;
++                for step in 0..40 {
++                    let t = f64::from(step) / 40.0;
++                    plot(
++                        radius * 0.8 * (a.cos() * (1.0 - t) + b.cos() * t),
++                        radius * 0.8 * (a.sin() * (1.0 - t) + b.sin() * t),
++                    );
++                }
++            }
++        }
++        for (index, mask) in pixels.into_iter().enumerate() {
++            if mask != 0 {
++                let glyph = char::from_u32(0x2800 + u32::from(mask)).unwrap_or(' ');
++                buf[(
++                    area.x + (index % usize::from(width)) as u16,
++                    area.y + (index / usize::from(width)) as u16,
++                )]
++                    .set_char(glyph)
++                    .set_fg(Color::Magenta);
++            }
++        }
++        if self.circle.is_active() {
++            let replies = std::iter::once(self.circle.current_reply.as_str())
++                .filter(|text| !text.is_empty())
++                .chain(
++                    self.circle
++                        .completed_replies
++                        .iter()
++                        .rev()
++                        .map(String::as_str),
++                );
++            let tracks = std::iter::once(self.circle.prompt.as_str()).chain(replies.take(2));
++            let mut occupied = vec![false; usize::from(width) * usize::from(height)];
++            for (track, text) in tracks.enumerate() {
++                let r = radius * [1.0, 0.64, 0.4][track];
++                let direction = if track % 2 == 0 { 1.0 } else { -1.0 };
++                let mut angle = direction * rotation + track as f64 * TAU / 3.0;
++                let start_angle = angle;
++                for glyph in text.graphemes(/*is_extended*/ true) {
++                    let cells = glyph.width();
++                    if cells == 0 || cells > usize::from(width) {
++                        continue;
++                    }
++                    let x = ((cx + r * angle.cos()) / 2.0).round() as i32 - cells as i32 / 2;
++                    let y = ((cy + r * angle.sin()) / 4.0).round() as i32;
++                    angle += (cells as f64 + 1.0) * 2.0 / r.max(1.0);
++                    if angle - start_angle > TAU - 0.25 {
++                        break;
++                    }
++                    if x < 0
++                        || y < 0
++                        || x as usize + cells > usize::from(width)
++                        || y >= i32::from(height)
++                    {
++                        continue;
++                    }
++                    let index = y as usize * usize::from(width) + x as usize;
++                    if occupied[index..index + cells].iter().any(|used| *used) {
++                        continue;
++                    }
++                    occupied[index..index + cells].fill(true);
++                    buf.set_stringn(
++                        area.x + x as u16,
++                        area.y + y as u16,
++                        glyph,
++                        cells,
++                        Style::default().fg(if track == 0 {
++                            Color::Cyan
++                        } else {
++                            Color::Reset
++                        }),
++                    );
++                }
++            }
++        }
++    }
++}
++
++#[cfg(test)]
++#[path = "magic_circle_tests.rs"]
++mod tests;
+--- /dev/null
++++ b/codex-rs/tui/src/magic_circle_tests.rs
+@@ -0,0 +1,111 @@
++use super::*;
++use pretty_assertions::assert_eq;
++
++#[test]
++fn grows_until_first_reply_and_returns_to_idle() {
++    let now = Instant::now();
++    let mut circle = MagicCircle::default();
++    let idle = circle.geometry(now);
++    circle.submit("prompt", now);
++    let submitted = circle.geometry(now);
++    let later = circle.geometry(now + Duration::from_secs(/*secs*/ 12));
++    assert!(submitted.radius > idle.radius);
++    assert!(later.radius > submitted.radius);
++    assert!(later.rings > submitted.rings);
++    circle.reply_delta("first reply", now + Duration::from_secs(/*secs*/ 12));
++    assert_eq!(
++        circle.geometry(now + Duration::from_secs(/*secs*/ 120)),
++        later
++    );
++    circle.finish();
++    assert_eq!(
++        circle.geometry(now + Duration::from_secs(/*secs*/ 121)),
++        idle
++    );
++}
++
++#[test]
++fn waiting_is_bounded_and_blank_deltas_do_not_end_growth() {
++    let now = Instant::now();
++    let mut circle = MagicCircle::default();
++    circle.begin(now);
++    circle.reply_delta("\n ", now + Duration::from_secs(/*secs*/ 1));
++    assert_eq!(
++        circle.geometry(now + Duration::from_secs(/*secs*/ 1_000)),
++        circle.geometry(now + Duration::from_secs(/*secs*/ 10_000))
++    );
++    assert!(circle.first_reply.is_none());
++}
++
++#[test]
++fn display_fragments_are_bounded_and_do_not_change_the_input() {
++    let input = format!("\u{1b}[31m{}中文", "long text ".repeat(/*n*/ 500));
++    let original = input.clone();
++    let mut circle = MagicCircle::default();
++    circle.submit(&input, Instant::now());
++    assert_eq!(input, original);
++    assert!(circle.prompt.graphemes(/*is_extended*/ true).count() <= TEXT_LIMIT);
++    assert!(!circle.prompt.contains('\u{1b}'));
++}
++
++fn snapshot(circle: &MagicCircle, now: Instant) -> String {
++    let area = Rect::new(
++        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 21,
++    );
++    let mut buffer = Buffer::empty(area);
++    MagicView {
++        circle,
++        animations_enabled: true,
++    }
++    .render_at(area, &mut buffer, now);
++    buffer
++        .content()
++        .chunks(/*chunk_size*/ 80)
++        .map(|row| {
++            row.iter()
++                .map(ratatui::buffer::Cell::symbol)
++                .collect::<String>()
++                .trim_end()
++                .to_string()
++        })
++        .collect::<Vec<_>>()
++        .join("\n")
++}
++
++#[test]
++fn idle_circle_snapshot() {
++    let now = Instant::now();
++    let circle = MagicCircle::default();
++    insta::assert_snapshot!("magic_idle", snapshot(&circle, now));
++}
++
++#[test]
++fn submitted_circle_snapshot() {
++    let now = Instant::now();
++    let mut circle = MagicCircle::default();
++    circle.submit("Create a small constellation", now);
++    insta::assert_snapshot!("magic_submitted", snapshot(&circle, now));
++}
++
++#[test]
++fn charging_circle_snapshot() {
++    let now = Instant::now();
++    let mut circle = MagicCircle::default();
++    circle.submit("Create a small constellation", now);
++    insta::assert_snapshot!(
++        "magic_charging",
++        snapshot(&circle, now + Duration::from_secs(/*secs*/ 16))
++    );
++}
++
++#[test]
++fn reply_orbits_snapshot() {
++    let now = Instant::now();
++    let mut circle = MagicCircle::default();
++    circle.submit("Create a small constellation", now);
++    circle.reply_delta("Reading the files", now + Duration::from_secs(/*secs*/ 16));
++    insta::assert_snapshot!(
++        "magic_reply_orbits",
++        snapshot(&circle, now + Duration::from_secs(/*secs*/ 16))
++    );
++}
+--- a/codex-rs/tui/src/slash_command.rs
++++ b/codex-rs/tui/src/slash_command.rs
+@@ -81,12 +81,14 @@
+     MemoryDrop,
+     #[strum(serialize = "debug-m-update")]
+     MemoryUpdate,
++    Magic,
+ }
+ 
+ impl SlashCommand {
+     /// User-visible description shown in the popup.
+     pub fn description(self) -> &'static str {
+         match self {
++            SlashCommand::Magic => "toggle the magic circle: on, off, or list",
+             SlashCommand::Feedback => "send logs to maintainers",
+             SlashCommand::New => "start a new chat during a conversation",
+             SlashCommand::Init => "create an AGENTS.md file with instructions for Codex",
+@@ -164,6 +166,7 @@
+         matches!(
+             self,
+             SlashCommand::Review
++                | SlashCommand::Magic
+                 | SlashCommand::Rename
+                 | SlashCommand::New
+                 | SlashCommand::Clear
+@@ -191,6 +194,7 @@
+         matches!(
+             self,
+             SlashCommand::Copy
++                | SlashCommand::Magic
+                 | SlashCommand::Agents
+                 | SlashCommand::Export
+                 | SlashCommand::Raw
+@@ -259,7 +263,7 @@
+             | SlashCommand::Exit
+             | SlashCommand::Side
+             | SlashCommand::Btw => true,
+-            SlashCommand::Rollout => true,
++            SlashCommand::Rollout | SlashCommand::Magic => true,
+             SlashCommand::TestApproval => true,
+             SlashCommand::Agents | SlashCommand::MultiAgents => true,
+             SlashCommand::Theme | SlashCommand::Pets => false,
+--- /dev/null
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_charging.snap
+@@ -0,0 +1,23 @@
++---
++source: tui/src/magic_circle_tests.rs
++expression: "snapshot(&circle, now + Duration::from_secs(16))"
++---
++
++
++
++                                ⢀⡠⠔⠒⠉⢉⣉⣉⣉C⡉r⠒e⢄⡀
++                              ⡠⠚⢁⣠⠔⢒⣉⣁⣀⣀⣤⣤⣈⠉⠑⠢⢄at⢤⡀
++                            ⡴⠋⢀⠔⠉⣠⡴⠿⢛⣋⣩⠭⠭⢍⣉⡙⠷⣶⢦⠈⠢⡀e⢄
++                          ⢀⠎⢀⠔⢁⣶⡿⣋⠴⠊⢉⣀⠤⠤⠤⠤⣄⡈⠑⠢⡙⠳⣤⡈⢢ ⠳a
++                         ⢀⠎⢀⠎⢀⡾⢋⠔⠁⡠⠚⢉⡠⠤⠤⠤⠤⣄⡈⠓⢄⠈⢣⡙⣿⡇⠳⡀ ⡀
++                         ⡜ ⡎⢰⣿⢃⠎⢀⠞⢀⡔⠋      ⠉⢦⡀⢳⡀⢱⡈⣷ ⢣ s
++                         ⡇⢰⠁⢸⡏⡸ ⡞ ⡞          ⢱ ⢣ ⣇⢸⣷⠈⡆⢸m
++                         ⡇⢸ ⣸⡇⡇ ⡇ ⡇          ⢸ ⢸ ⢸⢸⡏ ⡇⢸a
++                         ⡇⠸⡀⢿⡇⢹ ⢣ ⢇          ⡼ ⡼ ⡎⣸⡇⢀⠇⢸l
++                         ⢣ ⢣ ⢿⡈⢇⠈⢧⠈⠳⣀      ⣠⠜⠁⡴⠁⡰⢡⣿⠇⡸ l
++                         ⠈⢆⠈⢦⢸⣿⣌⢣⡀⠑⢤⡈⠙⠒⠒⠒⠒⠊⣁⡤⠊⢀⠔⣡⡾⠁⡰⠁⡰
++                          ⠈⢦⠈⠣⡈⠛⢦⣌⠢⢄⡈⠙⠒⠒⠒⠒⠉⣁⡠⠖⣩⣾⠿⢁⠔⠁⡰c
++                            ⠑⣄⠈⠢⡀⠳⠿⢶⣌⣉⣑⣒⣒⣋⣩⣥⣶⠞⠋⣀⠔⠁⣠⠞o
++                             ⠈⠓⢄⡈⠑⠢⢄⣀⡉⠛⠛⠉⠉⢉⣉⠥⠔⠋⢁⡤sn
++                                n⠑o⠤⣀⣈⣉⣉⣉⣉⣁⣀⠤e⠊t
++                                    i t a l l
+--- /dev/null
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_idle.snap
+@@ -0,0 +1,16 @@
++---
++source: tui/src/magic_circle_tests.rs
++expression: "snapshot(&circle, now)"
++---
++
++
++
++
++
++
++
++
++
++                                      ⣠⠤⠤⣄
++                                      ⡇  ⢸⠄
++                                      ⠙⠒⠖⠋
+--- /dev/null
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_reply_orbits.snap
+@@ -0,0 +1,23 @@
++---
++source: tui/src/magic_circle_tests.rs
++expression: "snapshot(&circle, now + Duration::from_secs(16))"
++---
++
++
++
++                                ⢀⡠⠔⠒⠉⢉⣉⣉⣉C⡉r⠒e⢄⡀
++                              ⡠⠚⢁⣠⠔⢒⣉⣁⣀⣀⣤⣤⣈⠉⠑⠢⢄at⢤⡀
++                            ⡴⠋⢀⠔⠉⣠⡴⠿⢛⣋⣩⠭⠭⢍⣉⡙⠷⣶⢦⠈⠢⡀e⢄
++                          ⢀⠎⢀⠔⢁⣶⡿⣋⠴d⢉i⠤n⠤g⣄ ⠑t⡙⠳⣤⡈⢢ ⠳a
++                         ⢀⠎⢀⠎⢀⡾⢋ea⡠⠚⢉⡠⠤⠤⠤⠤⣄⡈⠓⢄h⢣⡙⣿⡇⠳⡀ ⡀
++                         ⡜ ⡎⢰⣿⢃R⢀⠞⢀⡔⠋      ⠉⢦⡀⢳⡀e ⣷ ⢣ s
++                         ⡇⢰⠁⢸⡏⡸ ⡞ ⡞          ⢱ ⢣ f⢸⣷⠈⡆⢸m
++                         ⡇⢸ ⣸⡇⡇ ⡇ ⡇          ⢸ ⢸ i⢸⡏ ⡇⢸a
++                         ⡇⠸⡀⢿⡇⢹ ⢣ ⢇          ⡼ ⡼ l⣸⡇⢀⠇⢸l
++                         ⢣ ⢣ ⢿⡈⢇⠈⢧⠈⠳⣀      ⣠⠜⠁⡴⠁⡰e⣿⠇⡸ l
++                         ⠈⢆⠈⢦⢸⣿⣌⢣⡀⠑⢤⡈⠙⠒⠒⠒⠒⠊⣁⡤⠊⢀⠔s⡾⠁⡰⠁⡰
++                          ⠈⢦⠈⠣⡈⠛⢦⣌⠢⢄⡈⠙⠒⠒⠒⠒⠉⣁⡠⠖⣩⣾⠿⢁⠔⠁⡰c
++                            ⠑⣄⠈⠢⡀⠳⠿⢶⣌⣉⣑⣒⣒⣋⣩⣥⣶⠞⠋⣀⠔⠁⣠⠞o
++                             ⠈⠓⢄⡈⠑⠢⢄⣀⡉⠛⠛⠉⠉⢉⣉⠥⠔⠋⢁⡤sn
++                                n⠑o⠤⣀⣈⣉⣉⣉⣉⣁⣀⠤e⠊t
++                                    i t a l l
+--- /dev/null
++++ b/codex-rs/tui/src/snapshots/codex_tui__magic_circle__tests__magic_submitted.snap
+@@ -0,0 +1,19 @@
++---
++source: tui/src/magic_circle_tests.rs
++expression: "snapshot(&circle, now)"
++---
++
++
++
++
++
++
++
++                                   ⣠⠔c⠉o⠉n⠙s⣄
++                                 ⢀l ⢀⡿⠲⢶⡶⠖⢿⡀t⠳e
++                                 l ⢠⣋⡷⠚⠁⠈⠓⢾⣙⡄ ⢹
++                                 a⠴⣿⡁⡇    ⢸⢈⣿⠦⢸C
++                                 m ⠘⣍⡷⢤⡀⢀⡤⢾⣩⠃ r
++                                 ⠘s⡀⠈⣷⠴⠾⠷⠦⣾⠁⢀⡴e
++                                    ⠢⣄⣀⣀⣀⣀⣠⠴a
++                                     a  ⠁e t

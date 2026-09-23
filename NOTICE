@@ -1,0 +1,17 @@
+Magicodex
+
+The standalone frontend and project-specific launch/build tooling are
+licensed under the MIT license in LICENSE.
+
+This repository also contains OpenAI Codex source under
+upstream/codex-rust-v0.153.4. That source retains its original licenses and
+notices; see that directory's LICENSE and NOTICE and the notices in its
+vendored dependencies.
+
+The native-patch directory contains modifications and contextual excerpts
+derived from OpenAI Codex. These patches are distributed under the
+Apache License, Version 2.0, provided in
+upstream/codex-rust-v0.153.4/LICENSE.
+
+Magicodex is an unofficial UI modification and is not an official OpenAI
+Codex release.
