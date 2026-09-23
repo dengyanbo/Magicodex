@@ -38,4 +38,4 @@
 
 Codex 以 Apache License 2.0 发布，见 `LICENSE` 与 `NOTICE`；补丁同样以 Apache-2.0 提供，改动说明见 `MAGICODEX-NOTICE.md`。这不是 OpenAI 官方发布的 Codex。
 
-源码、构建方法与完整验证记录：<https://github.com/dengyanbo/Magicodex>
+使用说明：<https://github.com/dengyanbo/Magicodex>；源码、构建方法与完整验证记录：<https://github.com/dengyanbo/Magicodex/blob/main/docs/development.md>

@@ -1,261 +1,197 @@
-# Magicodex：终端里的魔法阵
+# Magicodex · 终端里的魔法阵
 
-把动漫里施法的魔法阵放进 AI 编程终端：输入前是一个小法阵；提交 prompt 后法阵随等待逐层变大、变复杂，prompt 和中间回复环绕法阵；最终回复像魔法生效一样从法阵下方释放出来。10 种法阵（经典、风、火、水、雷、土、神圣、黑暗、诡异、科技）的外形、运动和文字路径各不相同，用 `/magic list` 预览选择。
+让 AI 编程助手在终端里“施法”。你提交 prompt 后，一座动漫风格的魔法阵在终端里展开，等得越久，它就越大、越复杂；你的 prompt 和模型的中间回复沿着法阵的圆环旋转；最终回答到来时，魔法生效，文字从法阵下方倾泻而出。
 
-| 版本 | 适用于 | 做法 | 安装后的命令 | 说明 |
-| --- | --- | --- | --- | --- |
-| **codex** | OpenAI Codex CLI 0.153.4 | 原生 TUI 补丁：修改 Codex 源码后重新构建，界面就是原版 Codex | `magicodex`、`magicodex-bridge` | [下文](#codex-原生-tui-补丁) |
-| **copilot** | GitHub Copilot CLI（验证于 1.0.87） | 外壳：运行你安装的、未修改的 Copilot CLI，在它上方画法阵 | `magicopilot` | [copilot/README.md](copilot/README.md) |
-| **standalone** | Codex app-server | 最早的独立前端，自绘整套界面，只有一种法阵 | `magicodex-standalone` | [README-standalone.md](README-standalone.md) |
+支持 **GitHub Copilot CLI** 和 **OpenAI Codex CLI**。原程序的界面、快捷键、命令和默认 prompt 都保持不变；不想看的时候，输入 `/magic off` 就能关掉。
 
-Copilot CLI 的许可证不允许修改或制作衍生作品，所以 Copilot 版不是补丁，而是外壳。两种做法都不改变原程序的快捷键、命令和默认 prompt，`/magic` 命令都只在本机处理、不发给模型。
+![在 Copilot CLI 上施法：待机小阵、中间回复环绕、最终回复从法阵下方释放、法阵类型选择器](docs/images/magicopilot.png)
 
-![magicopilot：Copilot CLI 上方的待机小阵、中间回复环绕、最终回复向下释放、类型选择器](docs/images/magicopilot.png)
+## 特点
 
-## 安装发布版
+- **跟着等待成长**：输入前只有一个 5 行高的小法阵；提交后立刻变大，之后每隔几秒多画一层细节，直到模型第一次回复。
+- **文字织进法阵**：prompt 沿外圈环绕，中间回复沿内圈环绕。不显示模型的思考过程（reasoning）。
+- **回答从法阵中诞生**：最终回复开始时，法阵定格，光从阵心向下投出，正文从法阵下方出现。
+- **10 种法阵**：经典、风、火、水、雷、土、神圣、黑暗、诡异、科技。外形、动态、文字走向、待机小阵和出口各不相同，不只是换颜色。用 `/magic list` 边看边选。
+- **不打扰原程序**：`/magic` 命令在本机处理，不会发给模型；动画不额外调用模型，也不消耗额度。
 
-每个版本是一个独立的 GitHub Release（标签 `codex-v*`、`copilot-v*`、`standalone-v*`），附 zip、`SHA256SUMS.txt` 和 `install.ps1`。用 `install.ps1` 选择要安装的版本：
+## 选择版本
 
-```powershell
-# 仓库目前是私有的：需要已登录的 GitHub CLI（gh auth login）
-gh release download copilot-v0.1.0 --repo dengyanbo/Magicodex --pattern install.ps1
-powershell -ExecutionPolicy Bypass -File .\install.ps1                  # 交互式选择
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -Variant copilot -AddToPath
-```
+| 你在用 | 选择 | 安装后的命令 | 做法 |
+| --- | --- | --- | --- |
+| GitHub Copilot CLI | **copilot**（预发布） | `magicopilot` | 运行你已安装的原版 Copilot CLI，在它上方画法阵 |
+| OpenAI Codex CLI | **codex**（正式版） | `magicodex` | 基于 Codex 0.153.4 源码打补丁后重新构建，界面就是原版 Codex |
+| 想要完全自绘的界面 | standalone（最早的版本） | `magicodex-standalone` | 独立前端，通过 Codex app-server 对话，只有一种法阵 |
+
+为什么 Copilot 版不是补丁？Copilot CLI 的许可证不允许修改，所以 magicopilot 是一个“外壳”：它启动你自己安装的、未修改的 Copilot CLI，在上方加一块法阵区域。
+
+## 安装
+
+**准备**
+
+- Windows 10/11 x64，推荐使用 [Windows Terminal](https://aka.ms/terminal)。
+- copilot 版：已安装并登录 GitHub Copilot CLI（`npm install -g @github/copilot`，已在 1.0.87 上验证）。
+- codex 版：Codex 账号（ChatGPT 账号或 API key）；不需要另外安装官方 Codex。
+- standalone 版：已安装并配置 Codex CLI；`magicodex-standalone --demo` 可以离线演示。
+- 仓库目前是私有的，下载需要已登录的 [GitHub CLI](https://cli.github.com/)（`gh auth login`）。
+
+**安装步骤**
+
+1. 下载安装脚本：
+
+   ```powershell
+   gh release download --repo dengyanbo/Magicodex --pattern install.ps1 --clobber
+   ```
+
+2. 运行安装脚本，按菜单选择版本（`-AddToPath` 会把命令加入 PATH）：
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\install.ps1 -AddToPath
+   ```
+
+   也可以直接指定版本：`-Variant copilot`、`-Variant codex` 或 `-Variant standalone`。
+
+3. 打开一个**新的**终端窗口，运行 `magicopilot` 或 `magicodex`。
+
+安装脚本会先用 `SHA256SUMS.txt` 校验下载的文件，再安装到 `%LOCALAPPDATA%\Magicodex`；不加 `-AddToPath` 就不会改动 PATH。Windows PowerShell 5.1 和 PowerShell 7 都可以运行。也可以在 [Releases](https://github.com/dengyanbo/Magicodex/releases) 页面下载 zip，解压后直接运行。
+
+<details>
+<summary>安装脚本的全部参数</summary>
 
 | 参数 | 作用 |
 | --- | --- |
-| `-Variant codex\|copilot\|standalone` | 要安装的版本类型；不写则列出菜单选择 |
-| `-Version <x.y.z>` | 指定版本号；默认最新（优先正式版，没有正式版时用预发布） |
+| `-Variant codex\|copilot\|standalone` | 要安装的版本；不写则显示菜单 |
+| `-Version <x.y.z>` | 指定版本号；默认最新（优先正式版） |
 | `-List` | 列出可安装的发布与已安装的版本 |
-| `-AddToPath` | 把命令目录加入用户 PATH；不加则不改 PATH |
-| `-Uninstall -Variant <类型>` | 卸载该类型；只删除安装器自己装的版本目录、状态文件和命令入口，不认识的内容原样保留；程序正在运行时拒绝卸载、不做任何改动；最后一个版本卸载后同时移除 PATH 项和空的安装目录 |
-| `-InstallDir <目录>` | 安装位置，默认 `%LOCALAPPDATA%\Magicodex`；相对路径以当前 PowerShell 位置为准 |
-| `-Source <目录>` | 从已下载的 zip + `SHA256SUMS.txt` 安装，不访问网络 |
-| `-Force` | 重新下载并解压已安装的版本；新包校验、解压成功后才替换旧的；程序正在运行时拒绝替换 |
+| `-AddToPath` | 把命令目录加入用户 PATH |
+| `-Uninstall -Variant <类型>` | 卸载 |
+| `-InstallDir <目录>` | 安装位置，默认 `%LOCALAPPDATA%\Magicodex` |
+| `-Source <目录>` | 从已下载的 zip 和 `SHA256SUMS.txt` 安装，不联网 |
+| `-Force` | 重新下载并安装已安装的版本 |
 
-安装器先按 `SHA256SUMS.txt` 校验 zip，再解压到 `<安装目录>\<类型>\<版本>`，命令入口是 `<安装目录>\bin\*.cmd`。同一类型安装新版本时，入口切换到新版本并删除旧版本目录（只删带有该类型 `magicodex-package.json` 的目录）；旧版本的程序仍在运行时，它的目录原样保留，下次安装或卸载时再删。支持 Windows PowerShell 5.1 与 PowerShell 7；也可以直接解压 zip 使用。
+</details>
 
-发布包由 `scripts\New-Release.ps1` 生成（加 `-Publish` 才创建 GitHub Release）。Codex 包沿用官方 npm 包 `@openai/codex-win32-x64` 的目录布局（`bin\`、`codex-resources\`、`codex-path\`、`codex-package.json`），只替换 `bin\codex.exe`，因此沙箱辅助程序和内置 ripgrep 照常可用。Copilot 包附带微软官方 NuGet 包中的 `conpty.dll`/`OpenConsole.exe`（MIT，微软签名，未修改）。
+## 使用
 
-## GitHub Copilot CLI 版（magicopilot）
+### Copilot CLI：`magicopilot`
 
-用 `magicopilot` 代替 `copilot` 启动（其余参数原样传给 copilot），在 Copilot 输入框里输入 `/magic list`、`/magic on`、`/magic off`、`/magic 火` 等；命令由外壳在回车时截获，不发给模型。法阵默认开启，占用顶部 5–24 行，Copilot 至少保留 14 行。工作方式、参数、限制与验证记录见 [copilot/README.md](copilot/README.md)。
-
-## Codex 原生 TUI 补丁
-
-基于官方 **Codex 0.153.4** 的非官方 UI 补丁。沿用 Codex 自己的输入框、快捷键、命令菜单、历史记录、审批和默认提示；魔法阵不是另一个仿 Codex 的终端界面。
-
-原来的 `magicodex.exe` 独立前端保留不动，旧版说明见 [README-standalone.md](README-standalone.md)。原生版使用下面的新入口，不替换系统中已安装的 Codex。
-
-![classic 法阵：等待时逐层展开，最终回复从光锥下方吐出](docs/images/magic-classic.png)
-
-上图由 `tests\render_frames.py` 驱动真实补丁程序、按终端缓冲区渲染（本地 fixture，不调用模型），不是屏幕截图；实际字体与配色以你的 Windows Terminal 为准。
-
-## Git 仓库范围
-
-仓库包含项目源码（根目录独立前端、`copilot\` 外壳）、修改后的上游源码、补丁、打包与构建脚本，保留上游许可证与声明；不提交 EXE、依赖缓存、源码 ZIP、用户配置或数据库。克隆后需按下文构建，Git 仓库本身不包含本地已生成的二进制。许可证范围见 `LICENSE` 和 `NOTICE`。
-
-## 使用原生版
-
-安装发布版后直接运行 `magicodex`（官方入口）或 `magicodex-bridge`（Copilot 桥接），与下面两个脚本相同。从源码使用时，先完成原生构建和发布，再在 Windows Terminal 中运行：
+用 `magicopilot` 代替 `copilot` 启动，其余参数原样交给 Copilot：
 
 ```powershell
-# 沿用原有 Copilot 桥接与 profile
-.\magicodex-native.ps1
-
-# 原版官方入口与配置；参数原样交给 Codex
-.\magicodex-native-official.ps1 --model gpt-5.5
+magicopilot                    # 和 copilot 一样，多了魔法阵
+magicopilot --resume           # 恢复之前的会话
+magicopilot --magic-style 雷   # 以雷系法阵启动
 ```
 
-在 **Codex 输入框内**输入：
+法阵默认开启，画在 Copilot 界面的上方：待机时占 5 行，施法时 21 行，释放回答时 24 行，Copilot 始终至少保留 14 行。Copilot 请求权限确认时，法阵会缩小让出空间；窗口低于 19 行时法阵自动隐藏。更多参数见 [copilot/README.md](copilot/README.md)。
 
-```text
-/magic on
-/magic off
-/magic list
-/magic fire
-```
+### Codex CLI：`magicodex`
 
-不要把 `/magic on` 当作 CLI 的位置参数传入；原版 Codex 会把位置参数视为给模型的初始 prompt。
+运行 `magicodex`，第一次使用先运行 `magicodex login` 登录。参数与官方 `codex` 相同。
 
-默认关闭效果，保持原版起始界面；`/magic on` 后显示小型待机阵。`/magic list`（或只输入 `/magic`）打开样式选择弹窗，`/magic <类型>` 直接切换类型并开启，见[法阵类型](#法阵类型)。开关与类型只影响当前应用的展示，并在当前应用的新会话/会话切换间共享，不改用户配置文件。
+法阵默认**关闭**，保持原版的起始界面；在输入框里输入 `/magic on` 开启。法阵画在输入框上方，最终回复从法阵下方的出口展开，并留在对话记录里；`/magic off` 会连同历史里的法阵一起隐藏，回复本身不受影响。
 
-## 效果与内容边界
+![Codex 版的 classic 法阵：等待时逐层展开，最终回复从光锥下方吐出](docs/images/magic-classic.png)
 
-- 输入框与正常回复保持原版样式，在法阵外面；阵心不放文本框。
-- 提交新回合后，法阵立即变大，随后按等待时间扩大、增加几何层次，有终端空间上限。
-- 收到本回合第一段非空助手回复后停止增长。最终正文开始时，法阵固定为上方的文字出口，正文从出口下方展开；结束后不再在正文下面另画一座小阵。
-- prompt 沿外圈文字带环绕；最近的部分助手回复沿内圈文字带环绕。字符位置沿圆弧移动，不伪装成像素图像旋转。
-- 法阵不采集 reasoning。Codex 原本的状态行与完整 transcript 不因补丁而删改。
-- `/magic` 是本地显示命令，不调用模型，也不添加系统指令；开关提示使用 Codex 原生的 `• …` 信息样式，并注明当前类型。
-- `/magic list` 使用 Codex 原生的选择弹窗列出 10 种已实现的法阵类型，可逐个预览后选用。
-- 不增加 F2/F3/F4 等专属快捷键，沿用 Codex 的键位与用户既有 keymap。
+`magicodex-bridge` 只用于已经配置了本地 copilot-proxy 桥接的环境，一般用不到。
 
-### classic 法阵的构成
+### 控制命令
 
-| 等待时间 | 新增层次（逐层“描线”绘入） |
+两个版本都在**输入框里**输入以下命令并回车：
+
+| 命令 | 作用 |
 | --- | --- |
-| 待机 | 5 行高的双环星芯，静止不重绘 |
-| 提交后 | 外环与 prompt 文字带；prompt 逐字刻写进文字带 |
-| 2.5 秒 | 回复文字带与内接六芒星（六条边依次画出） |
-| 5 秒 | 六芒星顶点光珠、内环 |
-| 8 秒 | 阵心小环与六条辐条 |
-| 11 秒 | 外缘副环 |
+| `/magic on` / `/magic off` | 显示 / 隐藏法阵 |
+| `/magic list`（或只输入 `/magic`） | 打开法阵类型列表：↑↓ 移动时实时预览，Enter 选用，数字键直接选，Esc 取消 |
+| `/magic <类型>` | 直接切换，例如 `/magic fire`、`/magic 火` |
 
-- 明暗分层：主线为 Codex 的 magenta，细节为暗淡 magenta，光珠与阵心为加亮 magenta；等待期间一道默认前景色的流光沿外环顺时针移动，阵心随节拍明灭。六芒星与文字带反向旋转。颜色只使用 ANSI magenta、cyan（prompt，即用户输入色）与默认前景的明暗变化，遵循 Codex 样式指南，不引入 RGB、黄色或蓝色。
-- 文字带：文字在两道圆环之间，不压在线上；顶部和底部逐字紧排保持单词可读，两侧每行一个字。短 prompt 重复填满整圈，未写完的一遍保留整词，其余位置以 `✦` 补齐；过长 prompt 以 `…` 截断。
-- 所有圆按盲文点阵对称取整，不再出现单侧凸点。
-- 终端空间不足时自动省略六芒星等内层，只保留可读的环与文字。
-- Codex 的 `animations = false`：不旋转、无流光、不逐层绘入，已解锁的层直接完整显示；大小仍随等待时间增长。
+这些命令只在本机处理，不会发给模型。设置只在本次运行中有效，重新启动后恢复默认。在 Codex 里不要把 `/magic on` 写在命令行参数里，那样它会被当成发给模型的 prompt。
 
-### 从法阵下方显字
+## 10 种法阵
 
-最终回复的第一段文字到来时，法阵定格进入当前终端记录：外环底部出现光门，向下投出逐渐展开的光锥，正文紧接在光锥下方展开，后续文本始终接在它的下方，不会在完成时跳回法阵上方。尚未换行的普通文本也能逐段预览，正在书写的最后几个字以 magenta 高亮、随后续文字到来而冷却，换行提交后恢复原生样式；表格仍保留 Codex 的原生延迟排版，完整回复最终使用原生 Markdown 归并，避免重复文字。
+![10 种法阵在收到中间回复时的样子](docs/images/magic-styles.png)
 
-法阵是纯显示层，不进入模型上下文、复制友好原文或 transcript 导出。`/magic off` 会重绘并隐藏历史中的法阵装饰，不删除回复；再次开启可恢复装饰。长回复随终端正常滚动，法阵可能滚出当前可见区域。
+| 类型 | 样子 | 动起来 |
+| --- | --- | --- |
+| `classic` 经典 | 双文字环、内接六芒星、光珠与辐条 | 外环流光，六芒星反向旋转，逐层描线 |
+| `wind` 风 | 螺旋气旋臂、虚线外环、阵眼 | 顺时针疾转，prompt 沿螺旋卷入 |
+| `fire` 火 | 外缘火舌、五芒星、阵心火芒 | 火舌跳动，火星上升 |
+| `water` 水 | 波浪边缘、池心涟漪、水滴 | 波纹流动，文字随水波起伏 |
+| `thunder` 雷 | 锯齿八边形、旋转方阵 | 棱边噼啪跳变，闪电劈向阵心 |
+| `earth` 土 | 方形石印、角石、坤卦 ☷ | 石盘逐格顿挫转动，文字刻在四边 |
+| `holy` 神圣 | 放射圣光、八芒星、光十字 | 光芒呼吸明灭 |
+| `dark` 黑暗 | 深渊漩涡、事件视界、血色新月 | 逆时针吞噬，文字坠入视界 |
+| `eerie` 诡异 | 蠕动的环、缝线、会眨的邪眼 | 眼球转动，画面偶尔故障错位，回复反向书写 |
+| `tech` 科技 | 分段 HUD 环、刻度、雷达扫描 | 扫描线转动，显示真实计时与接收状态 |
 
-输出过程中开关立即生效，但开关确认文字会等当前消息结束后再写入历史，避免把正文拆断。若在一条已经开始的普通回复中途才开启，出口从下一条回复开始出现，不会插进已有文字中间；中断时保留已显现的部分正文。
+每种法阵的待机小阵（上）和最终回复的出口（下）：
 
-## 法阵类型
+![10 种待机小阵](docs/images/magic-style-idle.png)
 
-![10 种法阵类型：收到中间回复时的充能状态](docs/images/magic-styles.png)
+![10 种出口](docs/images/magic-style-outlets.png)
 
-`/magic list`（或只输入 `/magic`）打开 Codex 原生的选择弹窗：
+图片由测试脚本驱动真实程序、按终端内容渲染，实际字体与配色以你的终端为准。
 
-- ↑/↓ 移动高亮即实时预览：终端约 85 列及以上时，弹窗右侧显示该类型充能完成的法阵；法阵已开启时，输入框上方的待机阵或蓄力阵也同步切换。
-- Enter 选用并开启法阵；数字键 1–9 按 Codex 列表的原有行为直接选用对应类型；Esc 恢复打开弹窗前的类型，开关状态不变。
-- 也可以直接输入 `/magic fire`、`/magic 火` 或 `/magic FIRE`，切换并开启。无法识别的参数只显示用法，不改变当前设置。
-- 类型与开关一样只在本次运行的各会话间共享，不写入配置；重新启动后恢复为关闭的 `classic`。
-- 已定格在历史中的出口保留当时的类型；之后切换只影响新的法阵。
+## 更新与卸载
 
-| 类型 | 外形 | 运动 | 文字 | 待机小阵 | 出口 | ANSI 配色 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `classic` 经典 | 双文字带、内接六芒星、光珠与辐条 | 外环流光，六芒星反向旋转，逐层描线 | prompt 在外圈，回复在内圈 | 双环星芯 | 光门与光锥 | magenta、cyan |
-| `wind` 风 | 3–6 条螺旋气旋臂、虚线外环、阵眼 | 顺时针疾转，气流粒子掠过 | prompt 沿螺旋卷入；最新回复在阵眼处，旧字向外展开 | 三道卷风 | 收窄的龙卷 | cyan |
-| `fire` 火 | 外缘火舌、五芒星、阵心火芒 | 火舌跳动，火星上升 | 圆环排字，随热浪闪烁加粗 | 火苗 | 火柱与火星 | 红、黄 |
-| `water` 水 | 波浪外缘与内缘、池心涟漪、水滴 | 波纹流动，涟漪扩散，水滴起伏 | 沿波浪起伏 | 水滴与水波 | 水滴串落入水波 | 蓝、青 |
-| `thunder` 雷 | 锯齿八边形、内八边形、旋转方阵 | 棱边噼啪跳变，闪电劈向阵心 | 沿直边排列，落雷时加亮 | 分叉闪电 | 折线落雷 | 亮蓝、黄 |
-| `earth` 土 | 方形石印、角石、刻度、坤卦 ☷ | 菱形逐格顿挫转动 | 刻在四条边上 | 方印坤卦 | 裂纹石柱 | 黄、绿 |
-| `holy` 神圣 | 放射圣光、光环、八芒星、光十字 | 光芒呼吸明灭 | prompt 字间留空 | 八芒星 | 渐宽光柱 | 默认前景、黄 |
-| `dark` 黑暗 | 深渊漩涡臂、事件视界、血色新月 | 逆时针吞噬，尘埃坠入 | prompt 每遍尾部变暗；回复沿螺旋坠入视界 | 血色新月 | 暗影触须与坠滴 | 暗 magenta、红 |
-| `eerie` 诡异 | 蠕动的环、缝线、会眨的邪眼与小眼 | 眼球转动、眨眼，整行故障错位 | 回复反向书写，偶有字符变色 | 独眼 | 不齐的滴落 | 绿、magenta |
-| `tech` 科技 | 分段 HUD 环、刻度、雷达扫描、角括号 | 分段环转动，扫描线 | 圆环排字，并显示真实计时 `T+` 与 `WAIT`/`RECV` | 瞄准框 | 数据线与箭头 | cyan、绿 |
-
-- 所有类型共用同一套增长规则：输入前为 5 行高的待机小阵，提交后变大，在 2.5/5/8/11 秒各解锁一层细节，收到第一段非空回复后停止增长；终端空间不足时省略内层。
-- 各类型只改变文字的摆放路径，不改写字符；reasoning 不进入任何类型。`tech` 的计时是自提交起的真实耗时，`WAIT`/`RECV` 只表示是否已收到公开回复，不是进度百分比。
-- Codex 的 `animations = false`：所有类型都不旋转、不闪烁、不错位、不眨眼，已解锁的层直接完整显示；只有 `tech` 的计时文字仍按真实时间更新。
-- 配色：`classic` 仍只用 Codex 的 magenta/cyan。其他类型是用户主动选择的主题，按元素使用红、黄、蓝、绿等 ANSI 16 色，不使用 RGB/256 色，实际色值由终端主题决定。这是对 Codex 样式指南的有意例外，只作用于 `/magic` 装饰，不影响原生界面。
-- 区别不只是颜色：测试把 10 种类型的待机、蓄力和出口画面去掉颜色后逐对比较，任意两种的已绘制单元格至少有 28%（待机）、37%（蓄力）、36%（出口）互不重合；最接近的分别是神圣/诡异、经典/神圣。待机小阵只有 9 列宽，中心单元格难免重合，所以这一项的数字最低。
-
-各类型的待机小阵与出口（法阵定格后向下吐出正文）：
-
-![10 种待机小阵](docs/images/magic-style-idle.png) ![10 种出口](docs/images/magic-style-outlets.png)
-
-以上图片由 `tests\render_frames.py --style <类型> --windows-terminal` 驱动真实补丁程序渲染（本地 fixture），配色为 Campbell 近似。
-
-## 后端与安装边界
-
-`scripts\Start-NativeBridge.mjs` 复用现有桥接的 SDK、模型目录、profile 和生命周期代码，只把实际运行的 Codex 换成补丁版。模型目录模板读取自原安装，避免悄悄替换其默认指令。
-
-桥接原有的后端限制仍然存在；原生 UI 不会把一个原本不支持的桥接操作伪装成成功。官方入口不通过桥接，也不会自动切换账号或模型。
-
-原生补丁锁定 0.153.4。升级原安装后，应在对应源码版本重新移植，而不是混用不同版本的模型模板和运行组件。
-
-补丁入口在当前进程关闭原版启动更新弹窗：该弹窗会调用上游安装器，无法更新这份 UI 补丁，还可能安装另一份未打补丁的 Codex。补丁升级由本项目构建/发布管理；这是发行管理限制，不修改原始配置文件、系统提示词或快捷键。系统中原来的 Codex 入口仍保留其原有更新行为。
-
-这不再是约 1.1 MiB 的独立前端方案：发布目录包含 Codex 本体及同版本的原始 `codex-code-mode-host.exe`。选择原生补丁的取舍是更大的构建/分发体积，换取真实的原版交互兼容。
-
-本次 Windows 发布：补丁版主程序约 283.64 MiB，未修改的 code-mode host 约 69.12 MiB。这是磁盘体积，不代表运行内存。
-
-## 源码与补丁
-
-| 路径 | 用途 |
-| --- | --- |
-| `upstream\codex-rust-v0.153.4` | 匹配发布标签的源码 |
-| `native\codex.exe` | 构建并发布后的补丁版主程序 |
-| `native\codex-code-mode-host.exe` | 同版本、未修改的官方运行组件 |
-| `native-patch\0001-release-lock-alignment.patch` | 发布标签的内部包版本与 lockfile 对齐 |
-| `native-patch\0002-native-magic-tui.patch` | 原生 TUI 魔法阵补丁 |
-| `native-patch\0003-downward-reply.patch` | 法阵上方定型、文字向下输出及流式预览 |
-| `native-patch\0004-visual-refresh.patch` | 法阵视觉重绘：分层六芒星、双文字带、流光与描线动画、光锥出口、流式高亮 |
-| `native-patch\0005-magic-styles.patch` | 10 种法阵类型、`/magic list` 预览选择弹窗与 `/magic <类型>` |
-| `native-patch\manifest.json` | 上游版本、改动文件与受保护源码校验 |
-
-重新导出补丁：
+以下命令都需要 `install.ps1`，它可以随时用上面的 `gh release download` 命令重新下载。
 
 ```powershell
-# 源码 ZIP 不在 Git 中；仅重新导出补丁时需要下载原始基线
-Invoke-WebRequest 'https://codeload.github.com/openai/codex/zip/refs/tags/rust-v0.153.4' -OutFile .\upstream\codex-rust-v0.153.4.zip
-python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.zip --base-ref 11cbcbc250297f8b50ea94ac6851b11170c4de9d --keep-stage .\native-patch\0003-downward-reply.patch --keep-stage .\native-patch\0004-visual-refresh.patch --stage-name 0005-magic-styles.patch
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -List                        # 查看可用与已安装的版本
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Variant copilot             # 更新到最新版本
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall -Variant copilot  # 卸载
 ```
 
-0001/0002 取自 `--base-ref` 提交；0003、0004 尚未提交，按顺序各用一次 `--keep-stage` 原样保留，其后的改动以“基线 + 0003 + 0004”为起点导出。
+- 更新时，新版本安装成功后命令自动切换过去，旧版本随后删除；旧版本的程序还在运行时会先保留，下次再删。
+- 卸载只删除安装脚本自己装的文件；程序正在运行时会拒绝卸载，不做任何改动。最后一个版本卸载后，也会移除它加入 PATH 的目录。
 
-上游标签的 manifest 是 0.153.4，但锁文件中的 149 个工作区包仍标记为 0.0.0。准备构建时使用 `cargo update --workspace --offline` 对齐，1232 条外部依赖记录保持不变，并运行了上游要求的 Bazel 锁更新。
+## 常见问题
 
-第一阶段补丁还包含发布版快照对齐：上游快照原先按开发版 `0.0.0` 绘制版本横幅、填充空格和更新提示；本次构建实际为 `0.153.4`。这些差异已与魔法阵补丁分开保存，不通过改动运行时版本或原版提示来迁就快照。
+**会影响模型的回答，或者多花额度吗？**
 
-**Windows 数据库兼容：** 官方 Windows 构建的 SQLx 迁移校验基于 CRLF，而 GitHub 源归档为 LF。构建脚本会将 `state` 迁移文件的换行规范为 CRLF（SQL 内容不变），避免已有数据库被误报“迁移被修改”。没有重写、删除或重建用户数据库；可用 `python .\scripts\Prepare-NativeWindows.py --check-database` 只读核对已安装的迁移校验。
+不会。`/magic` 命令在本机处理，不进入模型请求；动画只是显示，不额外调用模型。测试中对比过：使用魔法阵时发给模型的系统提示与不使用时完全一致。
 
-补丁只在 TUI 增加渲染模块、命令及少量生命周期挂钩，不修改 core、protocol、模型提示模板、原输入组件或键位实现。
+**会显示模型的思考过程吗？**
 
-## 构建与验证
+不会。法阵只显示你的 prompt 和模型公开的中间回复，不读取 reasoning。
 
-本机开发工具为 Rust 1.95.0 MSVC、Visual Studio Build Tools、just、cargo-nextest、cargo-insta。构建脚本只调整当前进程环境，不修改系统 PATH。
+**原来的快捷键、斜杠命令还能用吗？**
 
-```powershell
-.\scripts\Build-Native.ps1 -Action Build
-.\scripts\Build-Native.ps1 -Action Test -Filter 'test(magic)'
-.\scripts\Build-Native.ps1 -Action Test
-.\scripts\Build-Native.ps1 -Action Fix
-.\scripts\Build-Native.ps1 -Action Format
-.\scripts\Publish-Native.ps1
-```
+能。键盘、鼠标、粘贴都照常交给原程序，只有 `/magic` 命令会被截获。
 
-原生测试按上游规则通过 `just test` / nextest 运行。UI 变化使用 insta snapshots；默认关闭效果时，原组件的既有快照不应因魔法阵而改变。
+**法阵显示成方块或乱码？**
 
-初次开发时使用无 Git 索引的发布归档，上游 `just fmt` 因无法枚举 Bazel 文件而未能运行。当时仅对改动的 Rust crate 执行了格式化。本轮源码已有 Git 索引，运行上游格式化并补齐缺失的 `dotslash` 后，完整 `just fmt-check` 已通过；克隆后也需要准备 `dotslash`、`uv` 等上游格式化依赖。
+法阵用盲文点阵字符（例如 ⣿）和中文绘制。推荐使用 Windows Terminal；如果仍显示为方块，请换一个支持这些字符的字体。
 
-本机归档的 Rust 格式化替代命令：`.\scripts\Build-Native.ps1 -Action FormatRust`。
+**窗口太小会怎样？**
 
-`tests\native_terminal.py` 使用本地 Responses fixture 驱动真实原生 CLI，不消耗模型额度，用于检查本地命令、图形增长、开关、默认指令一致性及原退出键；也检查 `/magic list` 弹窗的预览、Esc 恢复与 Enter 选用，以及非 classic 类型的出口位置。向下吐字用例暂停后续响应，先确认没有换行的首段已经出现在出口下方，再继续发送剩余正文；同时检查流中开关、缩放及最终无重复。默认不设置 `WT_SESSION`，走 Codex 的通用滚动策略；加 `--windows-terminal` 则按 Windows Terminal 的策略运行。读屏前会等待输出静默，避免把半帧重绘误判为结果。
+Copilot 版在窗口低于 19 行时隐藏法阵；这时 `/magic list` 只显示提示，可以直接用 `/magic <类型>` 切换。Codex 版在空间不足时会省略法阵的内层细节。
 
-`tests\render_frames.py` 用同样的本地 fixture 把待机、描线、蓄力、中间回复、吐字、完成各阶段渲染为 PNG，便于审阅视觉改动（需要 Pillow，运行方式见文件开头）；`--style <类型>` 选择要渲染的法阵类型。
+**Codex 版会影响我已安装的官方 Codex 吗？**
 
-字体效果、输入法候选窗与主观审美仍需在用户实际 Windows Terminal 中确认。
+不会替换官方 Codex，但两者共用 `~/.codex`（配置、登录和会话）。如果你的 `~/.codex` 已被**更新版本**的官方 Codex 使用过，0.153.4 可能读不了新写入的数据；这时可以为补丁版单独设置 `CODEX_HOME`（需要在该目录重新登录），例如在 PowerShell 中运行 `$env:CODEX_HOME = "$env:USERPROFILE\.magicodex"`，或在 cmd 中运行 `set CODEX_HOME=%USERPROFILE%\.magicodex`，只对当前窗口有效。补丁版关闭了官方的“有新版本”提示，因为那个更新只会装上一份没有魔法阵的 Codex。
 
-### 验证记录与边界
+**为什么 Copilot 版是预发布？**
 
-**多类型法阵（0005）**
+自动化测试（真实 Copilot CLI 加本地模拟模型）已经全部通过，但还没有在真人操作的 Windows Terminal 中完整验收字体、输入法和观感。遇到问题可以随时用 `/magic off` 关掉，或者改回直接运行 `copilot`。
 
-- 完整原生 TUI 套件：4108 通过、10 跳过（nextest 另有 145 项 leaky，均为与魔法阵无关的 app 测试）。魔法阵定向用例由 26 项增至 41 项，新增：10 种类型两两不同（去色比较）、蓄力时都在动、降低动效后都静止、prompt 与回复的字符都写进阵中、出口都落到正文上方中央、`tech` 计时与状态如实、弹窗预览/Esc 恢复/Enter 选用、未知参数不改设置、历史出口保留原类型、类型解析与共享设置。
-- 12 份新快照（10 种类型的待机/6 秒蓄力/16 秒回复/出口图集、去色距离矩阵、选择弹窗）逐一审查后接受；classic 原有 6 份快照完全未变，说明移植到新框架后 classic 逐字节一致。
-- Clippy（`-p codex-tui`）无新增告警，`just fmt` 已运行，`cargo fmt --check` 通过；release 构建仍只有未改动的 app-server 一处 `unused_mut`、cloud-tasks 两处未使用 import 警告。
-- ConPTY 验收在通用策略与 Windows Terminal 策略下均通过：`/magic list` 弹窗中按 ↓ 预览 wind、Esc 后恢复且法阵仍关闭；再次打开后选中 fire 并 Enter，法阵以 fire 开启，一轮真实流程的出口位于正文上方；`/magic 雷` 直接切换；三轮模型请求的默认 `instructions` 完全相同，控制命令不进入模型输入。
-- 用真实程序按 Windows Terminal 策略渲染了 10 种类型的完整流程并逐张审查。审查中发现并修正了原型里的问题：风的 prompt 与回复螺旋交叉、诡异的 prompt 与回复共用一条文字带，都会导致两段文字交错成乱码；诡异的小眼睛糊成实心块、水滴被文字盖住、雷的落点角度计算有误且闪电折线过于平缓、水的外缘呈花瓣状。
-- 五阶段补丁：0001–0004 重新导出后逐字节不变，新增 0005（50 个文件）；950 个原提示、输入与键位相关文件保持不变。从原始 ZIP 依次重放五个阶段后，manifest 中 94 个文件及全部 1747 个 TUI 文件与源码逐字节一致。
-- 发布 `native\codex.exe` SHA256 `AAE2C8439944E01988FBAC9085925C6EAB03E682405C5BD981C087210626648A`；旧独立前端 SHA256 不变。本轮只用本地 fixture，没有调用真实模型。
-- 已知取舍：选择弹窗的预览需要约 85 列以上；圆形与螺旋路径的下半部分文字从右向左排（与 classic 相同），`eerie` 的回复有意反向；类型不跨重启保存。
+**支持 macOS 或 Linux 吗？**
 
-**视觉重绘（0004）**
+目前只支持 Windows。
 
-- 完整原生 TUI 套件：4093 通过、10 跳过；魔法阵定向用例 26 项全部通过（含对称取整、明暗分层与配色、降低动效、长 prompt 接缝等新用例，6 份法阵快照逐一审查后接受）。nextest 另有 151 项标记为 leaky；与上一轮相比新增 19 项、消失 12 项，均为与魔法阵无关的 app 测试，属于运行间漂移，不把它描述成完全无告警。
-- Clippy（`-p codex-tui`）无新增告警；上游完整 `just fmt` 已运行且未改动无关文件。release 构建仍有未改动的 app-server 一处 `unused_mut`、cloud-tasks 两处未使用 import 警告。
-- ConPTY 验收在通用策略与 Windows Terminal 策略下均通过：法阵从待机约 9×5 字符扩大到 24×13、35×17（上一版为 5×3、16×9、20×11）；未换行首段与完整正文都在光锥下方，流中开关与 120→90 列缩放后顺序不变，正文不重复。
-- 发现：在**非** Windows Terminal 的通用滚动策略下，流式输出期间已提交的正文行会从屏幕上暂时消失，直到回合结束重排才恢复。关闭魔法阵的原版行为同样复现，属于上游在 ConPTY 局部滚动区路径上的既有问题，并非本补丁引入；Windows Terminal 策略下逐帧检查（每 150ms）无丢失。
-- 四阶段补丁从原始 ZIP 逐一重放，67 个改动文件与源码逐字节一致；0001/0002 与已提交版本相同，0003 原样保留；950 个原提示、输入与键位相关文件保持不变。
-- 本轮只用本地 fixture，没有调用真实模型；旧独立前端 SHA256 不变。
+## 隐私与安全
 
-**向下吐字（0003）**
+- 除了安装脚本从 GitHub 下载发布包，Magicodex 不联网、不上传任何数据；Copilot CLI 和 Codex 本身的联网行为不变。
+- 不读取、不保存你的凭据，登录和计费都由原程序自己处理。
+- magicopilot 从 Copilot 写在本机的会话记录（`~/.copilot/session-state`）读取 prompt 和回复文字，只在内存中用于显示。只有设置了 `MAGICOPILOT_LOG` 时，才会把调试日志（其中包含 prompt）写到你指定的文件。
+- 每个发布都附带 `SHA256SUMS.txt`，安装脚本校验通过后才会安装。
 
-- 本地 Responses fixture 驱动的原生 CLI 已验证 `/magic on/off/list`；原生回复和输入区不被覆盖。
-- 新原生程序通过 ConPTY 验证：未换行首段与完整正文都在出口下方，流中关闭/重开和 120→90 列缩放后顺序不变，最终文字只出现一次，正文下面不再生成小阵。相同用例在旧程序上因首段不可见而失败。
-- 开关前后发送给模型的默认 `instructions` 相同；控制命令不进入模型输入。reasoning 不进入法阵，也不会触发“首次回复”冻结。
-- 当时的完整原生 TUI 套件：4087 通过、10 跳过，其中魔法阵定向用例 20 项通过；nextest 另有 144 项 leaky。
-- 覆盖首段无换行、仅有完整结果而没有 delta、流中开关、表格延迟排版，以及 40 段中文混排在缩放和中断后完整保留。
+## 许可与声明
 
-**通用**
-- 归档的版本快照已按实际 0.153.4 对齐；现有数据库迁移校验仅只读核对，没有通过改数据库、关闭迁移验证或删除历史来解决兼容问题。
-- 原生补丁首版已用真实 Copilot 桥接验证助手回复及 `/magic on/off`；本轮向下吐字使用本地 fixture，没有额外调用真实模型。旧独立前端的 SHA256 保持不变，原安装仍为 Codex 0.153.4。
-- 验收自动化曾误触原版更新弹窗，在全局 npm 目录产生未完成的新安装；已按 npm 日志确认其为本次新建项并卸载清理，原来 `D:\Program Files\ChatGPT` 下的安装未变。现在补丁入口明确禁止启动自动更新，避免重现。
+- Magicodex（magicopilot、安装脚本、独立前端）以 [MIT](LICENSE) 许可发布。
+- Codex 补丁基于 OpenAI Codex，以 Apache License 2.0 提供，详见 [NOTICE](NOTICE)。
+- Copilot 版的发布包附带微软官方的 `conpty.dll` 和 `OpenConsole.exe`（MIT，未修改）。
+- 本项目是非官方作品，不是 OpenAI 或 GitHub 的产品。magicopilot 不包含、不修改、不再分发 GitHub Copilot CLI，它启动的是你自己安装的副本。
+
+## 参与开发
+
+从源码构建、补丁结构、测试方法与完整验证记录见 [docs/development.md](docs/development.md)。
