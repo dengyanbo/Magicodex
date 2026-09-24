@@ -3,6 +3,7 @@
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::circle::sides::Outlet;
 use crate::circle::state::CIRCLE_ROWS;
 use crate::circle::state::MagicCircle;
 use crate::circle::state::OUTLET_ROWS;
@@ -180,6 +181,7 @@ impl Magic {
                 }
                 if !text.trim().is_empty() {
                     self.circle.complete_reply(&text, now);
+                    self.circle.chronicle.oracle();
                 }
                 self.last_reply = Some((text, tools));
             }
@@ -201,7 +203,42 @@ impl Magic {
                     self.finish_at = Some(now);
                 }
             }
+            Event::Spell {
+                id,
+                tool,
+                detail,
+                mcp,
+                nested,
+            } => {
+                if self.phase == Phase::Charging {
+                    self.circle.chronicle.cast(&id, &tool, &detail, mcp, nested);
+                }
+            }
+            Event::SpellDone { id, ok } => self.circle.chronicle.resolve(&id, ok),
+            Event::Summon { id, name } => {
+                if self.phase == Phase::Charging {
+                    self.circle.chronicle.summon(&id, &name);
+                }
+            }
+            Event::Tome(name) => {
+                if self.phase == Phase::Charging {
+                    self.circle.chronicle.tome(&name);
+                }
+            }
+            Event::Intent(intent) => self.circle.chronicle.intend(&intent),
         }
+    }
+
+    /// The answer's arrival while its outlet shows, for the sides of the circle.
+    pub(crate) fn outlet(&self, now: Instant) -> Option<Outlet> {
+        let Phase::Outlet { since } = self.phase else {
+            return None;
+        };
+        let run = now.saturating_duration_since(since).as_secs_f64();
+        Some(Outlet {
+            took: self.circle.elapsed(since).unwrap_or_default(),
+            progress: (run / OUTLET_TIME.as_secs_f64()).min(1.0),
+        })
     }
 
     /// Terminal progress from the child: a busy indicator that clears also ends the turn.
@@ -450,6 +487,43 @@ mod tests {
         magic.handle(Event::TurnStart, now + Duration::from_millis(300));
         magic.tick(now + FINAL_GRACE * 3);
         assert_eq!(magic.phase, Phase::Charging);
+    }
+
+    #[test]
+    fn a_charging_turn_records_its_spells() {
+        let now = Instant::now();
+        let mut magic = Magic::new(true, MagicStyle::Classic, true);
+        let spell = |id: &str| Event::Spell {
+            id: id.into(),
+            tool: "glob".into(),
+            detail: "*.md".into(),
+            mcp: false,
+            nested: false,
+        };
+        magic.handle(spell("early"), now);
+        assert_eq!(magic.circle.chronicle.cast, 0, "no turn yet");
+        charged(&mut magic, now);
+        magic.handle(spell("1"), now);
+        magic.handle(
+            Event::SpellDone {
+                id: "1".into(),
+                ok: true,
+            },
+            now,
+        );
+        magic.handle(Event::Intent("Exploring".into()), now);
+        magic.handle(
+            Event::Reply {
+                text: "Checking".into(),
+                tools: true,
+            },
+            now,
+        );
+        let chronicle = &magic.circle.chronicle;
+        assert_eq!((chronicle.cast, chronicle.oracles), (1, 1));
+        assert_eq!(chronicle.intent.as_deref(), Some("Exploring"));
+        magic.handle(Event::Prompt("Next".into()), now);
+        assert_eq!(magic.circle.chronicle.cast, 0, "a new prompt starts afresh");
     }
 
     #[test]

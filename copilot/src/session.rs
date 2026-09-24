@@ -17,6 +17,8 @@ use std::time::SystemTime;
 
 use serde_json::Value;
 
+use crate::circle::sides::spells;
+
 const SCAN_INTERVAL: Duration = Duration::from_millis(1500);
 const MAX_READ: u64 = 8 << 20;
 
@@ -37,6 +39,28 @@ pub(crate) enum Event {
     Aborted,
     /// The session ended or the child switched to another session.
     Reset,
+    /// A tool call started; `nested` when a subagent made it.
+    Spell {
+        id: String,
+        tool: String,
+        detail: String,
+        mcp: bool,
+        nested: bool,
+    },
+    /// A tool call or a subagent finished.
+    SpellDone {
+        id: String,
+        ok: bool,
+    },
+    /// A subagent started for the call `id`.
+    Summon {
+        id: String,
+        name: String,
+    },
+    /// A skill was invoked.
+    Tome(String),
+    /// What Copilot says it is doing, as its status line shows.
+    Intent(String),
 }
 
 pub(crate) fn parse_event(line: &[u8]) -> Option<Event> {
@@ -76,6 +100,47 @@ pub(crate) fn parse_event(line: &[u8]) -> Option<Event> {
         "session.idle" => Some(Event::Idle),
         "session.abort" | "session.error" => Some(Event::Aborted),
         "session.shutdown" => Some(Event::Reset),
+        "tool.execution_start" => {
+            let (id, tool) = (text("toolCallId"), text("toolName"));
+            if id.is_empty() || tool.is_empty() {
+                return None;
+            }
+            let arguments = data.and_then(|data| data.get("arguments"));
+            if tool == "report_intent" {
+                return spells::intent(arguments).map(Event::Intent);
+            }
+            let mcp = !text("mcpServerName").is_empty();
+            Some(Event::Spell {
+                detail: spells::detail(&tool, mcp, arguments),
+                nested: !text("parentToolCallId").is_empty(),
+                id,
+                tool,
+                mcp,
+            })
+        }
+        "tool.execution_complete" | "subagent.completed" | "subagent.failed" => {
+            let id = text("toolCallId");
+            let ok = event.get("type")?.as_str()? != "subagent.failed"
+                && data
+                    .and_then(|data| data.get("success"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true);
+            (!id.is_empty()).then_some(Event::SpellDone { id, ok })
+        }
+        "subagent.started" => {
+            let name = [text("agentDisplayName"), text("agentName")]
+                .into_iter()
+                .find(|name| !name.is_empty())
+                .unwrap_or_default();
+            Some(Event::Summon {
+                id: text("toolCallId"),
+                name,
+            })
+        }
+        "skill.invoked" => {
+            let name = text("name");
+            (!name.is_empty()).then_some(Event::Tome(name))
+        }
         _ => None,
     }
 }
@@ -313,6 +378,70 @@ mod tests {
         assert_eq!(
             parse_event(br#"{"type":"permission.requested","data":{}}"#),
             Some(Event::Attention(true))
+        );
+    }
+
+    #[test]
+    fn tool_subagent_and_skill_events_become_spells() {
+        // As Copilot 1.0.89 writes them to events.jsonl.
+        let start = br#"{"type":"tool.execution_start","data":{"toolCallId":"call_1","toolName":"glob","arguments":{"pattern":"*.md"},"toolTitle":"Finding files"}}"#;
+        assert_eq!(
+            parse_event(start),
+            Some(Event::Spell {
+                id: "call_1".into(),
+                tool: "glob".into(),
+                detail: "*.md".into(),
+                mcp: false,
+                nested: false,
+            })
+        );
+        let done =
+            br#"{"type":"tool.execution_complete","data":{"toolCallId":"call_1","success":false}}"#;
+        assert_eq!(
+            parse_event(done),
+            Some(Event::SpellDone {
+                id: "call_1".into(),
+                ok: false
+            })
+        );
+        let nested = br#"{"type":"tool.execution_start","data":{"toolCallId":"c2","toolName":"search","mcpServerName":"github","parentToolCallId":"c1"}}"#;
+        assert!(matches!(
+            parse_event(nested),
+            Some(Event::Spell {
+                mcp: true,
+                nested: true,
+                ..
+            })
+        ));
+        let summon = br#"{"type":"subagent.started","data":{"toolCallId":"c1","agentName":"explore","agentDisplayName":"Explore","agentDescription":"x"}}"#;
+        assert_eq!(
+            parse_event(summon),
+            Some(Event::Summon {
+                id: "c1".into(),
+                name: "Explore".into()
+            })
+        );
+        let failed = br#"{"type":"subagent.failed","data":{"toolCallId":"c1"}}"#;
+        assert_eq!(
+            parse_event(failed),
+            Some(Event::SpellDone {
+                id: "c1".into(),
+                ok: false
+            })
+        );
+        let skill = br#"{"type":"skill.invoked","data":{"name":"azure-image-gen","content":"SKILL BODY","path":"x"}}"#;
+        assert_eq!(
+            parse_event(skill),
+            Some(Event::Tome("azure-image-gen".into()))
+        );
+        let intent = br#"{"type":"tool.execution_start","data":{"toolCallId":"c3","toolName":"report_intent","arguments":{"intent":"Exploring codebase"}}}"#;
+        assert_eq!(
+            parse_event(intent),
+            Some(Event::Intent("Exploring codebase".into()))
+        );
+        assert_eq!(
+            parse_event(br#"{"type":"tool.execution_start","data":{"toolName":"glob"}}"#),
+            None
         );
     }
 

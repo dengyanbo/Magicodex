@@ -31,6 +31,8 @@ COMMENTARY = "我先看看目录结构，再开始施法。"
 FINAL = ["MAGIC_FINAL ", "法阵已经", "完成展开。\n\n", "- 光芒从阵心", "流向下方\n"]
 FIRST_DELAY = 6.0
 FINAL_DELAY = 2.0
+# Columns of a 120-column terminal: the circle's footprint (centre 59 ± 23) and the sides.
+CIRCLE, LEFT, RIGHT = (36, 83), (0, 35), (84, 120)
 
 _orig_dsr = pyte.Screen.report_device_status
 pyte.Screen.report_device_status = lambda self, *a, **k: None if k.get("private") else _orig_dsr(self, *a)
@@ -165,6 +167,20 @@ class Terminal:
                     x += max(1, wcswidth(text))
                 rows.append("".join(line))
             return rows
+
+    def band(self, start, end, height=None):
+        """Text of columns [start, end) of the first `height` rows, wide characters counted once."""
+        self.settle()
+        with self.lock:
+            rows = []
+            for y in range(height if height is not None else self.screen.lines):
+                line, x = [], start
+                while x < end:
+                    text = self.screen.buffer[y][x].data or " "
+                    line.append(text)
+                    x += max(1, wcswidth(text))
+                rows.append("".join(line))
+            return "\n".join(rows)
 
     def text(self):
         return "\n".join(self.rows())
@@ -320,15 +336,21 @@ def run_turn(term, frames, prefix):
     started = time.monotonic()
     time.sleep(1.2)
     early = term.rows()
+    early_circle = term.band(*CIRCLE, 21)
     frames.append((f"{prefix}-02-charging", "提交后 1.2s", term.cells()))
     time.sleep(3.5)
     later = term.rows()
+    later_circle = term.band(*CIRCLE, 21)
+    sides = (term.band(*LEFT, 21), term.band(*RIGHT, 21))
     frames.append((f"{prefix}-03-charged", "蓄力 4.7s", term.cells()))
-    rows = term.wait(lambda r: all(c in region_text(r) for c in "目录结构施法"), timeout=20,
+    rows = term.wait(lambda r: all(c in term.band(*CIRCLE, 21) for c in "目录结构施法"), timeout=20,
                      what="commentary orbiting the circle")
     frames.append((f"{prefix}-04-commentary", "中间回复环绕", term.cells()))
+    rows = term.wait(lambda r: all(s in term.band(*LEFT, 21) for s in ("寻踪术", "*.md")), timeout=15,
+                     what="the glob call as a spell in the grimoire")
+    frames.append((f"{prefix}-04b-spell", "咏唱记录：寻踪术", term.cells()))
     rows = term.wait(lambda r: any("MAGIC_FINAL" in row for row in r), timeout=30, what="final answer")
-    return started, early, later, rows
+    return started, (early, early_circle), (later, later_circle), sides, rows
 
 
 def main():
@@ -373,16 +395,22 @@ def main():
             assert len(Fixture.requests) == before, "typing /ma reached the model"
             results["command_hint"] = True
 
-            started, early, later, rows = run_turn(term, frames, "turn")
+            started, (early, early_circle), (later, later_circle), sides, rows = run_turn(term, frames, "turn")
             assert tab_row(early) == 21 and tab_row(later) == 21, (tab_row(early), tab_row(later))
-            grow = (len(braille_rows(early)), len(braille_rows(later)))
-            width = lambda r: max(sum("\u2801" <= c <= "\u28ff" for c in row) for row in r[:21])
-            assert width(later) > width(early), f"circle should grow: {grow}"
-            assert all(c in region_text(later) for c in "MAGICPROT画法阵"), "the prompt orbits the circle"
+            grow = (len(braille_rows(early_circle.split("\n"))), len(braille_rows(later_circle.split("\n"))))
+            width = lambda band: max(sum("\u2801" <= c <= "\u28ff" for c in row) for row in band.split("\n"))
+            assert width(later_circle) > width(early_circle), f"circle should grow: {grow}"
+            assert all(c in later_circle for c in "MAGICPROT画法阵"), "the prompt orbits the circle"
             results["growth_rows"] = grow
+            left, right = sides
+            assert "咏唱记录" in left and "静候咒文" in left, "grimoire page:\n" + left
+            assert all(s in right for s in ("施法状态", "T+", "蓄力", "/\\_/\\")), "status page and familiar:\n" + right
+            assert all(any("\u2801" <= c <= "\u28ff" for c in side) for side in sides), "pillars and particles"
+            results["sides"] = True
 
             outlet = term.wait(lambda r: tab_row(r) == 24, timeout=8, what="outlet after the final answer")
             frames.append(("turn-05-outlet", "最终回复：法阵定格并向下释放", term.cells()))
+            assert "神谕降临" in term.band(*RIGHT, 24), "outlet summary:\n" + term.band(*RIGHT, 24)
             assert any("MAGIC_FINAL" in row for row in outlet[24:]), "answer is rendered by Copilot below"
             idle = term.wait(lambda r: tab_row(r) == 5, timeout=8, what="return to the idle circle")
             results["turn_seconds"] = round(time.monotonic() - started, 1)

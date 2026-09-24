@@ -10,6 +10,7 @@ use ratatui::style::Modifier;
 use ratatui::style::Style;
 use unicode_width::UnicodeWidthChar;
 
+use crate::circle::sides::SideView;
 use crate::circle::state::MagicCircle;
 use crate::circle::state::MagicScene;
 use crate::circle::state::MagicView;
@@ -192,6 +193,15 @@ pub(crate) fn region(magic: &Magic, area: Rect, buf: &mut Buffer, now: Instant) 
             scene,
         }
         .render_at(area, buf, now);
+        if magic.phase != Phase::Idle {
+            SideView {
+                circle: &magic.circle,
+                style: magic.shown_style(),
+                animations: magic.animations,
+                outlet: magic.outlet(now),
+            }
+            .render(area, buf, now);
+        }
     }
     if let Some(text) = magic.notice(now)
         && magic.picker.is_none()
@@ -277,6 +287,33 @@ mod tests {
             .filter(|c| ('\u{2801}'..='\u{28ff}').contains(c))
             .count();
         assert!(braille > 100, "preview circle:\n{rows}");
+    }
+
+    #[test]
+    fn the_sides_show_only_while_a_turn_casts() {
+        let area = Rect::new(0, 0, 120, 21);
+        let now = Instant::now();
+        let mut magic = Magic::new(true, MagicStyle::Classic, true);
+        let drawn = |magic: &Magic, area: Rect| {
+            let mut buf = Buffer::empty(area);
+            region(magic, area, &mut buf, now);
+            text(&buf).join("\n")
+        };
+        assert!(
+            !drawn(&magic, Rect::new(0, 0, 120, 5)).contains("咏唱记录"),
+            "idle stays clean"
+        );
+        magic.handle(crate::session::Event::Prompt("Draw".into()), now);
+        let rows = drawn(&magic, area);
+        assert!(
+            rows.contains("咏唱记录") && rows.contains("施法状态"),
+            "{rows}"
+        );
+        magic.command("list", 40, now);
+        assert!(
+            !drawn(&magic, area).contains("咏唱记录"),
+            "the picker has the region"
+        );
     }
 
     #[test]

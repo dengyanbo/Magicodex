@@ -5,7 +5,8 @@ magicopilot 在你的终端里运行本机已安装、**未经修改**的 GitHub
 - 输入前是一个小法阵；提交 prompt 后法阵变大，并随等待时间越来越大、越来越复杂，直到第一次回复；
 - 你的 prompt 和中间回复（带工具调用的阶段性回复，不含 reasoning）环绕在法阵外圈和内圈；
 - 最终回复到来时法阵定格，光从阵心向下释放，Copilot 的回答在法阵下方出现，随后法阵缩回待机大小；
-- 共 10 种法阵：classic 经典、wind 风、fire 火、water 水、thunder 雷、earth 土、holy 神圣、dark 黑暗、eerie 诡异、tech 科技。每种都有自己的外形、运动方式和文字路径，不只是换颜色。
+- 共 10 种法阵：classic 经典、wind 风、fire 火、water 水、thunder 雷、earth 土、holy 神圣、dark 黑暗、eerie 诡异、tech 科技。每种都有自己的外形、运动方式和文字路径，不只是换颜色；
+- 蓄力时法阵两侧是一本魔导书：左页“咏唱记录”把 Copilot 的工具调用写成法术，右页“施法状态”显示咏唱时长、施法阶段和计数；紧挨法阵的两根法阵柱随层数点亮，符文粒子向阵心汇聚，右下角的小猫使魔跟着吟唱、跑腿和欢呼。
 
 Copilot CLI 自己的界面、快捷键、默认 prompt、斜杠命令、会话、认证和计费都不变：键盘、鼠标、粘贴原样交给 Copilot，只有 `/magic ...` 命令由外壳在回车时截获。
 
@@ -57,7 +58,7 @@ Copilot 自己的命令列表里不会出现 `/magic`：那份列表由 Copilot 
 ## 工作方式
 
 1. magicopilot 在伪终端（ConPTY）里启动 copilot，用 vt100 解析它的全屏界面，再和魔法阵区域一起合成到你的真实终端上。Copilot 的高度 = 窗口高度 − 法阵高度，所以两者不会重叠。
-2. 法阵的内容来自 Copilot 实时写入的会话事件 `~/.copilot/session-state/<会话>/events.jsonl`：`user.message` 是 prompt，带工具调用的 `assistant.message` 是中间回复，`assistant.turn_end` 表示回复完成；reasoning 字段不会被读取或显示。新会话通过 `--session-id` 精确定位；`/resume`、`/new` 等切换会话时，按 Copilot 进程持有的会话锁文件找到新的事件文件。
+2. 法阵的内容来自 Copilot 实时写入的会话事件 `~/.copilot/session-state/<会话>/events.jsonl`：`user.message` 是 prompt，带工具调用的 `assistant.message` 是中间回复，`assistant.turn_end` 表示回复完成；`tool.execution_start/complete`、`subagent.started/completed/failed` 和 `skill.invoked` 写成两侧的法术，工具调用只取工具名和一项最能说明它的参数（搜索模式、文件名、命令第一行、网址、代理或技能名），子代理内部的调用只计数。reasoning 字段不会被读取或显示。新会话通过 `--session-id` 精确定位；`/resume`、`/new` 等切换会话时，按 Copilot 进程持有的会话锁文件找到新的事件文件。
 3. 终端查询（颜色、能力、同步输出等）转发给真实终端，由真实终端回答；标题、进度条、剪贴板等控制序列原样转发。随包的 Windows Terminal 伪终端（`conpty.dll` + `OpenConsole.exe`）保证 Copilot 看到的是真实终端，界面与直接运行时一致。
 4. 鼠标坐标按法阵高度平移后交给 Copilot，点击标签页、滚动等照常可用。
 5. 查找 Copilot CLI：
@@ -69,6 +70,7 @@ Copilot 自己的命令列表里不会出现 `/magic`：那份列表由 Copilot 
 ## 布局与限制
 
 - 法阵在顶部：待机 5 行，施法时 21 行，最终回复时 24 行，Copilot 至少保留 14 行。窗口低于 19 行时法阵自动隐藏；Copilot 请求权限确认时法阵缩回待机大小，把空间让给确认界面。
+- 两侧内容只在蓄力与出口时出现，按窗口宽度逐级显示：65 列起法阵柱与粒子，89 列起两页魔导书，109 列起参数摘要与使魔；法阵区域不足 12 行（终端不足 26 行）时不显示。`--magic-no-motion` 时两侧同样静止。
 - 超链接（OSC 8）和终端图片协议不转发；Copilot 的其他显示照常。
 - `/magic` 截获和上面的用法提示都依赖 Copilot 输入框的外观（目前识别两种样式）。Copilot 改版后如果识别失败，提示不再出现，这行命令会原样交给 Copilot，只会得到“Unknown command”，不会发给模型。
 - 会话事件格式属于 Copilot 的内部实现。格式变化时法阵会退化为只显示待机图案，不影响 Copilot 本身。

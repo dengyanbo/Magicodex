@@ -12,6 +12,7 @@ use ratatui::layout::Rect;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::circle::canvas::Canvas;
+use crate::circle::sides::spells::Chronicle;
 use crate::circle::style::MagicStyle;
 use crate::circle::styles;
 use crate::circle::styles::Clock;
@@ -22,7 +23,7 @@ pub(crate) const USAGE: &str = "Usage: /magic on|off|list|<style>";
 pub(crate) const CIRCLE_ROWS: u16 = 21;
 /// Rows below an outlet circle for the emission that leads into the answer.
 pub(crate) const OUTLET_ROWS: u16 = 3;
-const MAX_WIDTH: u16 = 99;
+pub(crate) const MAX_WIDTH: u16 = 99;
 const TEXT_LIMIT: usize = 192;
 const IDLE_RADIUS: f64 = 8.0;
 const START_RADIUS: f64 = 20.0;
@@ -37,6 +38,8 @@ pub(crate) struct MagicCircle {
     /// Tail of the latest public assistant text.
     reply: String,
     reply_complete: bool,
+    /// What this turn has cast, for the pages beside the circle.
+    pub(crate) chronicle: Chronicle,
 }
 
 #[derive(Debug, PartialEq)]
@@ -107,6 +110,17 @@ impl MagicCircle {
         self.started.is_some()
     }
 
+    /// Time since the prompt, while a turn is active.
+    pub(crate) fn elapsed(&self, now: Instant) -> Option<Duration> {
+        self.started
+            .map(|started| now.saturating_duration_since(started))
+    }
+
+    /// Layers unlocked so far, which the side pages name as stages.
+    pub(crate) fn layers(&self, now: Instant) -> usize {
+        self.geometry(now).layers
+    }
+
     fn geometry(&self, now: Instant) -> Geometry {
         let Some(started) = self.started else {
             return Geometry {
@@ -164,7 +178,7 @@ fn sanitize_user_text(text: &str) -> String {
 }
 
 /// Single-line printable text without control characters or bidi overrides.
-fn display_text(text: &str) -> String {
+pub(crate) fn display_text(text: &str) -> String {
     sanitize_user_text(text)
         .replace(['\n', '\r', '\t'], " ")
         .graphemes(/*is_extended*/ true)
@@ -255,7 +269,7 @@ impl MagicView<'_> {
     }
 }
 
-fn odd(size: u16) -> u16 {
+pub(crate) fn odd(size: u16) -> u16 {
     if size.is_multiple_of(2) {
         size.saturating_sub(1)
     } else {

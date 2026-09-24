@@ -312,6 +312,7 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
 | `session.rs` | 读取 `~/.copilot/session-state/<会话>/events.jsonl`，跟随会话切换 |
 | `magic.rs` | 法阵状态机、区域高度、`/magic` 命令与输入框识别、输入时的用法提示、类型选择器 |
 | `render.rs`、`circle\` | 合成画面；10 种法阵的绘制（与 Codex 补丁同源） |
+| `circle\sides\` | 法阵两侧：布局与宽度分级、工具调用到法术的映射与本回合记录、魔导书两页、10 种法阵柱、符文粒子、使魔 |
 | `app.rs` | 主循环：子进程输出、输入、事件、限帧绘制、退出恢复 |
 
 ### 构建与测试
@@ -332,6 +333,15 @@ uv run --no-project --with pyte --with pywinpty --with psutil --with wcwidth --w
   - `--windows-terminal` 模拟 Windows Terminal 环境；
   - `--baseline` 另外直接运行一次 Copilot，对比发给模型的请求；
   - `--frames <目录>` 保存各阶段画面。
+
+### 验证记录（0.2.0）
+
+- 本版改动：蓄力与出口时法阵两侧显示魔导书两页（咏唱记录、施法状态）、10 种法阵柱、符文粒子与使魔；数据来自 `events.jsonl` 中持久化的 `tool.execution_start/complete`、`subagent.*` 与 `skill.invoked`（`assistant.intent`、`assistant.usage` 等只做临时推送，读不到）。
+- 占用区：逐个法阵以 0.1 秒间隔扫描 20 秒（含出口），最宽 20–21 格，两侧从中心 ±23 格外开始；单元测试确认任何法阵都不越界，两侧也不改动占用区内的任何格子。
+- 宽度分级按布局公式得出并有单元测试：65 列起法阵柱与粒子，89 列起两页魔导书，109 列起参数摘要与使魔；`--magic-no-motion` 时两侧逐格不变。
+- 端到端 `tests\copilot_terminal.py` 在 Copilot CLI 1.0.89-1 上通过：蓄力 4.7 秒时左页为“咏唱记录 / 静候咒文”、右页含“施法状态”“T+”与使魔；fixture 的 `glob` 调用出现为“寻踪术 *.md”；出口时右页显示“神谕降临”。法阵本身的断言（点阵随时间变大、prompt 与中间回复环绕）改为只统计中心 ±23 列，避免被两侧的点阵和文字干扰。
+- 10 种法阵的蓄力画面渲染成总览图人工检查过，文字不压法阵，配色跟随各法阵。
+- 49 项单元测试通过；Clippy（`-D warnings`）无告警。
 
 ### 验证记录（0.1.1）
 

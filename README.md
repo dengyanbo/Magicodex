@@ -26,6 +26,7 @@ Works with **GitHub Copilot CLI** and **OpenAI Codex CLI**. The original program
 - **Answers born from the circle**: when the final reply begins, the circle freezes, light shines down from its center, and the reply appears below the circle.
 - **10 magic circles**: Classic, Wind, Fire, Water, Thunder, Earth, Holy, Dark, Eerie and Tech. Each has its own shape, motion, text path, idle emblem and outlet, not just a different color. Preview and pick one with `/magic list`.
 - **Stays out of the way**: `/magic` commands are handled locally and never sent to the model. The animation makes no extra model calls and uses no quota.
+- **Beside the circle** (magicopilot): while it charges, the left page of a grimoire lists the agent's tool calls as spells (Tracking for searches, Insight for reading, Ritual for shell commands, Summon Familiar for subagents…) and the right page shows the elapsed time, the charge stage and the counts. Two pillars in the circle's own style light up layer by layer, rune particles drift toward the circle, and a small cat familiar chants, runs errands and cheers when the answer arrives.
 
 ## Choose a version
 
@@ -95,7 +96,7 @@ magicopilot --resume                # resume an earlier session
 magicopilot --magic-style thunder   # start with the Thunder circle
 ```
 
-The circle is on by default and drawn above Copilot's interface: 5 rows when idle, 21 while casting and 24 while releasing the answer, and Copilot always keeps at least 14 rows. When Copilot asks for permission, the circle shrinks to make room; in windows shorter than 19 rows it hides automatically. More options are described in [copilot/README.md](copilot/README.md) (in Chinese).
+The circle is on by default and drawn above Copilot's interface: 5 rows when idle, 21 while casting and 24 while releasing the answer, and Copilot always keeps at least 14 rows. When Copilot asks for permission, the circle shrinks to make room; in windows shorter than 19 rows it hides automatically. What appears beside the charging circle depends on the width: pillars and particles from 65 columns, the grimoire pages from 89, and argument details and the familiar from 109. More options are described in [copilot/README.md](copilot/README.md) (in Chinese).
 
 ### Codex CLI: `magicodex`
 
@@ -197,7 +198,7 @@ Only Windows for now.
 
 - Apart from the installer downloading releases from GitHub, Magicodex makes no network connections and uploads no data; Copilot CLI and Codex themselves connect as they always do.
 - It never reads or stores your credentials; sign-in and billing are handled by the original programs.
-- magicopilot reads the prompt and reply text from the session logs Copilot writes on your machine (`~/.copilot/session-state`) and only keeps them in memory for display. It writes a debug log (which contains prompts) to a file of your choice only when `MAGICOPILOT_LOG` is set.
+- magicopilot reads the prompt, the reply text and the tool calls from the session logs Copilot writes on your machine (`~/.copilot/session-state`) and only keeps them in memory for display. Of a tool call it shows only the tool and one telling argument (a search pattern, a file name, the first line of a command, a URL, an agent or skill name). It writes a debug log (which contains prompts) to a file of your choice only when `MAGICOPILOT_LOG` is set.
 - Every release comes with `SHA256SUMS.txt`, and the installer only installs once the checksums match.
 
 ## License and notices
@@ -234,6 +235,7 @@ Building from source, the patch structure, testing and the full verification rec
 - **回答从法阵中诞生**：最终回复开始时，法阵定格，光从阵心向下投出，正文从法阵下方出现。
 - **10 种法阵**：经典、风、火、水、雷、土、神圣、黑暗、诡异、科技。外形、动态、文字走向、待机小阵和出口各不相同，不只是换颜色。用 `/magic list` 边看边选。
 - **不打扰原程序**：`/magic` 命令在本机处理，不会发给模型；动画不额外调用模型，也不消耗额度。
+- **法阵两侧**（magicopilot）：蓄力时，左页“咏唱记录”把模型的工具调用写成法术（搜索是寻踪术、读文件是洞察之眼、终端命令是召唤仪式、子代理是召唤使魔……），右页显示咏唱时长、施法阶段和各项计数；两根与法阵同款的法阵柱随层数逐层点亮，符文粒子向阵心汇聚，小猫使魔会跟着吟唱、跑腿，回答到来时欢呼。
 
 ## 选择版本
 
@@ -303,7 +305,7 @@ magicopilot --resume           # 恢复之前的会话
 magicopilot --magic-style 雷   # 以雷系法阵启动
 ```
 
-法阵默认开启，画在 Copilot 界面的上方：待机时占 5 行，施法时 21 行，释放回答时 24 行，Copilot 始终至少保留 14 行。Copilot 请求权限确认时，法阵会缩小让出空间；窗口低于 19 行时法阵自动隐藏。更多参数见 [copilot/README.md](copilot/README.md)。
+法阵默认开启，画在 Copilot 界面的上方：待机时占 5 行，施法时 21 行，释放回答时 24 行，Copilot 始终至少保留 14 行。Copilot 请求权限确认时，法阵会缩小让出空间；窗口低于 19 行时法阵自动隐藏。蓄力时两侧显示什么取决于窗口宽度：65 列起有法阵柱和粒子，89 列起有两页魔导书，109 列起再加上参数摘要和使魔。更多参数见 [copilot/README.md](copilot/README.md)。
 
 ### Codex CLI：`magicodex`
 
@@ -405,7 +407,7 @@ Copilot 版在窗口低于 19 行时隐藏法阵；这时 `/magic list` 只显�
 
 - 除了安装脚本从 GitHub 下载发布包，Magicodex 不联网、不上传任何数据；Copilot CLI 和 Codex 本身的联网行为不变。
 - 不读取、不保存你的凭据，登录和计费都由原程序自己处理。
-- magicopilot 从 Copilot 写在本机的会话记录（`~/.copilot/session-state`）读取 prompt 和回复文字，只在内存中用于显示。只有设置了 `MAGICOPILOT_LOG` 时，才会把调试日志（其中包含 prompt）写到你指定的文件。
+- magicopilot 从 Copilot 写在本机的会话记录（`~/.copilot/session-state`）读取 prompt、回复文字和工具调用，只在内存中用于显示。工具调用只显示工具和一项最能说明它的参数（搜索的模式、文件名、命令的第一行、网址、代理或技能的名字）。只有设置了 `MAGICOPILOT_LOG` 时，才会把调试日志（其中包含 prompt）写到你指定的文件。
 - 每个发布都附带 `SHA256SUMS.txt`，安装脚本校验通过后才会安装。
 
 ## 许可与声明
