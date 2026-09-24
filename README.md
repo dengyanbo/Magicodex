@@ -1,4 +1,223 @@
-# Magicodex · 终端里的魔法阵
+# Magicodex
+
+Magic circles in your terminal · 终端里的魔法阵
+
+<details>
+<summary><b>English</b> (click to expand)</summary>
+
+> **Still staring at your terminal, bored, waiting for the model to reply?**
+>
+> Now fate offers you a choice: **take the class change and become an AI Priest.**
+>
+> Wield ten schools of magic circles: Wind, Fire, Water, Thunder, Earth, Holy, Dark, Eerie, Tech and Classic. Make your prompt the incantation and your wait the offering, and raise your prayer in the terminal. The longer you wait, the vaster and more intricate the circle grows, as your incantation and the whispers of the gods orbit its rings. When the oracle descends, the circle seals and light pours from its heart. Be still and listen: this is the guidance of the Model God.
+>
+> The wait won't get any shorter. It just won't be boring anymore.
+
+Let your AI coding assistant cast spells in the terminal. When you submit a prompt, an anime-style magic circle unfolds in your terminal, growing bigger and more intricate the longer you wait. Your prompt and the model's intermediate replies orbit its rings. When the final answer arrives, the spell takes effect and the text pours out from below the circle.
+
+Works with **GitHub Copilot CLI** and **OpenAI Codex CLI**. The original program's interface, shortcuts, commands and default prompt stay unchanged. If you'd rather not see the circle, type `/magic off` to turn it off.
+
+![Casting on Copilot CLI: the idle circle, intermediate replies orbiting it, the final reply released below it, and the style picker](docs/images/magicopilot.png)
+
+## Features
+
+- **Grows while you wait**: before you type, there's only a small circle 5 rows tall. It grows as soon as you submit, then adds another layer of detail every few seconds until the model first replies.
+- **Words woven into the circle**: your prompt orbits the outer ring and intermediate replies orbit the inner ring. The model's reasoning is never shown.
+- **Answers born from the circle**: when the final reply begins, the circle freezes, light shines down from its center, and the reply appears below the circle.
+- **10 magic circles**: Classic, Wind, Fire, Water, Thunder, Earth, Holy, Dark, Eerie and Tech. Each has its own shape, motion, text path, idle emblem and outlet, not just a different color. Preview and pick one with `/magic list`.
+- **Stays out of the way**: `/magic` commands are handled locally and never sent to the model. The animation makes no extra model calls and uses no quota.
+
+## Choose a version
+
+| You use | Choose | Command after install | How it works |
+| --- | --- | --- | --- |
+| GitHub Copilot CLI | **copilot** (prerelease) | `magicopilot` | Runs the original Copilot CLI you installed and draws the circle above it |
+| OpenAI Codex CLI | **codex** (stable) | `magicodex` | Rebuilt from the Codex 0.153.4 source with a patch; the interface is the original Codex |
+| A fully custom-drawn interface | standalone (the earliest version) | `magicodex-standalone` | A standalone frontend that talks to Codex through its app-server, with only one circle |
+
+Why isn't the Copilot version a patch? The Copilot CLI license doesn't allow modifying it, so magicopilot is a wrapper: it starts the unmodified Copilot CLI you installed yourself and adds a magic circle area above it.
+
+## Installation
+
+**Prerequisites**
+
+- Windows 10/11 x64; [Windows Terminal](https://aka.ms/terminal) is recommended.
+- copilot: GitHub Copilot CLI installed and signed in (`npm install -g @github/copilot`; verified on 1.0.87).
+- codex: a Codex account (a ChatGPT account or an API key). You don't need to install the official Codex separately.
+- standalone: Codex CLI installed and configured. `magicodex-standalone --demo` runs an offline demo.
+- The repository is currently private, so downloading requires a signed-in [GitHub CLI](https://cli.github.com/) (`gh auth login`).
+
+**Steps**
+
+1. Download the installer:
+
+   ```powershell
+   gh release download --repo dengyanbo/Magicodex --pattern install.ps1 --clobber
+   ```
+
+2. Run the installer and choose a version from the menu (`-AddToPath` adds the commands to PATH):
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\install.ps1 -AddToPath
+   ```
+
+   You can also name the version directly: `-Variant copilot`, `-Variant codex` or `-Variant standalone`.
+
+3. Open a **new** terminal window and run `magicopilot` or `magicodex`.
+
+The installer first verifies the downloaded files against `SHA256SUMS.txt`, then installs them to `%LOCALAPPDATA%\Magicodex`. Without `-AddToPath`, it leaves PATH alone. It runs on both Windows PowerShell 5.1 and PowerShell 7. You can also download a zip from the [Releases](https://github.com/dengyanbo/Magicodex/releases) page, extract it and run it directly.
+
+<details>
+<summary>All installer options</summary>
+
+| Option | Effect |
+| --- | --- |
+| `-Variant codex\|copilot\|standalone` | The version to install; shows a menu if omitted |
+| `-Version <x.y.z>` | A specific version; defaults to the latest (stable releases first) |
+| `-List` | Lists available releases and installed versions |
+| `-AddToPath` | Adds the command directory to your user PATH |
+| `-Uninstall -Variant <variant>` | Uninstalls |
+| `-InstallDir <dir>` | Install location; `%LOCALAPPDATA%\Magicodex` by default |
+| `-Source <dir>` | Installs from a downloaded zip and `SHA256SUMS.txt`, without going online |
+| `-Force` | Downloads and reinstalls a version that is already installed |
+
+</details>
+
+## Usage
+
+### Copilot CLI: `magicopilot`
+
+Start `magicopilot` instead of `copilot`; every other argument is passed to Copilot unchanged:
+
+```powershell
+magicopilot                         # just like copilot, plus the magic circle
+magicopilot --resume                # resume an earlier session
+magicopilot --magic-style thunder   # start with the Thunder circle
+```
+
+The circle is on by default and drawn above Copilot's interface: 5 rows when idle, 21 while casting and 24 while releasing the answer, and Copilot always keeps at least 14 rows. When Copilot asks for permission, the circle shrinks to make room; in windows shorter than 19 rows it hides automatically. More options are described in [copilot/README.md](copilot/README.md) (in Chinese).
+
+### Codex CLI: `magicodex`
+
+Run `magicodex`; the first time, sign in with `magicodex login`. It takes the same arguments as the official `codex`.
+
+The circle is **off** by default, so you get the original start screen; type `/magic on` in the input box to turn it on. The circle is drawn above the input box, and the final reply unfolds from the outlet below it and stays in the transcript. `/magic off` also hides the circles in the history, without affecting the replies themselves.
+
+![The Codex classic circle: it unfolds layer by layer while you wait, and the final reply pours out below the cone of light](docs/images/magic-classic.png)
+
+`magicodex-bridge` is only for setups that already have a local copilot-proxy bridge configured; most people won't need it.
+
+### Commands
+
+In either version, type these commands **in the input box** and press Enter:
+
+| Command | Effect |
+| --- | --- |
+| `/magic on` / `/magic off` | Shows / hides the circle |
+| `/magic list` (or just `/magic`) | Opens the list of styles: ↑↓ previews as you move, Enter selects, number keys select directly, Esc cancels |
+| `/magic <style>` | Switches directly, e.g. `/magic fire` or `/magic 火` |
+
+These commands are handled locally and never sent to the model. Settings only last for the current run and go back to the defaults when you restart. In Codex, don't pass `/magic on` as a command-line argument, or it will be sent to the model as a prompt.
+
+## 10 magic circles
+
+![The 10 circles when an intermediate reply arrives](docs/images/magic-styles.png)
+
+| Style | Looks | Moves |
+| --- | --- | --- |
+| `classic` 经典 | Twin text rings, an inscribed hexagram, orbs and spokes | Light streams around the outer ring, the hexagram counter-rotates, lines are traced layer by layer |
+| `wind` 风 | Spiral cyclone arms, a dashed outer ring, an eye | Spins fast clockwise; the prompt is swept in along the spirals |
+| `fire` 火 | Tongues of flame around the rim, a pentagram, a blazing core | Flames flicker, sparks rise |
+| `water` 水 | Wavy edges, ripples in the central pool, droplets | Ripples flow; text rises and falls with the waves |
+| `thunder` 雷 | A jagged octagon, a rotating square | Edges crackle and jump; lightning strikes the center |
+| `earth` 土 | A square stone seal, cornerstones, the Kun trigram ☷ | The stone disc turns in halting steps; text is carved into its four sides |
+| `holy` 神圣 | Radiant holy light, an eight-pointed star, a cross of light | The rays brighten and dim like breathing |
+| `dark` 黑暗 | An abyssal vortex, an event horizon, a blood-red crescent | Devours counter-clockwise; text sinks past the horizon |
+| `eerie` 诡异 | Writhing rings, stitches, a blinking evil eye | The eye rolls, the picture glitches now and then, replies are written backwards |
+| `tech` 科技 | Segmented HUD rings, tick marks, a radar sweep | The sweep line turns, showing a real timer and receive status |
+
+The idle emblem (top) and final-reply outlet (bottom) of each circle:
+
+![The 10 idle emblems](docs/images/magic-style-idle.png)
+
+![The 10 outlets](docs/images/magic-style-outlets.png)
+
+These images were rendered from the terminal contents of the real programs, driven by test scripts; actual fonts and colors depend on your terminal.
+
+## Updating and uninstalling
+
+All of these commands need `install.ps1`, which you can download again at any time with the `gh release download` command above.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -List                        # list available and installed versions
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Variant copilot             # update to the latest version
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall -Variant copilot  # uninstall
+```
+
+- When you update, the commands switch to the new version once it has installed successfully, and the old version is then deleted. If the old version is still running, it is kept and deleted next time.
+- Uninstalling only deletes files the installer installed itself. If the program is running, the installer refuses to uninstall and changes nothing. Once the last version is uninstalled, the directory it added to PATH is removed as well.
+
+## FAQ
+
+**Does it affect the model's answers or use extra quota?**
+
+No. `/magic` commands are handled locally and never become part of a model request, and the animation is display-only, with no extra model calls. The tests compared both cases: the system prompt sent to the model is identical with and without the magic circle.
+
+**Does it show the model's reasoning?**
+
+No. The circle only shows your prompt and the model's public intermediate replies; it never reads reasoning.
+
+**Do the original shortcuts and slash commands still work?**
+
+Yes. Keyboard, mouse and paste all go to the original program as usual; only `/magic` commands are intercepted.
+
+**The circle shows up as boxes or garbled characters?**
+
+The circle is drawn with Braille dot characters (such as ⣿) and Chinese text. Windows Terminal is recommended; if you still see boxes, switch to a font that supports these characters.
+
+**What happens if the window is too small?**
+
+The Copilot version hides the circle in windows shorter than 19 rows; `/magic list` then only shows a notice, and you can switch with `/magic <style>` directly. The Codex version leaves out the circle's inner details when space runs short.
+
+**Does the Codex version affect my installed official Codex?**
+
+It doesn't replace the official Codex, but the two share `~/.codex` (configuration, sign-in and sessions). If your `~/.codex` has already been used by a **newer** official Codex, 0.153.4 may not be able to read the data it wrote. In that case, give the patched version its own `CODEX_HOME` (you'll need to sign in again there): for example, run `$env:CODEX_HOME = "$env:USERPROFILE\.magicodex"` in PowerShell or `set CODEX_HOME=%USERPROFILE%\.magicodex` in cmd; it only applies to the current window. The patched version turns off the official "new version available" prompt, because that update would just install a Codex without the magic circle.
+
+**Why is the Copilot version a prerelease?**
+
+The automated tests (the real Copilot CLI plus a local mock model) all pass, but fonts, input methods and the overall feel haven't yet been fully checked by a person in Windows Terminal. If you run into problems, turn it off at any time with `/magic off`, or go back to running `copilot` directly.
+
+**Does it support macOS or Linux?**
+
+Only Windows for now.
+
+## Privacy and security
+
+- Apart from the installer downloading releases from GitHub, Magicodex makes no network connections and uploads no data; Copilot CLI and Codex themselves connect as they always do.
+- It never reads or stores your credentials; sign-in and billing are handled by the original programs.
+- magicopilot reads the prompt and reply text from the session logs Copilot writes on your machine (`~/.copilot/session-state`) and only keeps them in memory for display. It writes a debug log (which contains prompts) to a file of your choice only when `MAGICOPILOT_LOG` is set.
+- Every release comes with `SHA256SUMS.txt`, and the installer only installs once the checksums match.
+
+## License and notices
+
+- Magicodex (magicopilot, the installer and the standalone frontend) is released under the [MIT](LICENSE) license.
+- The Codex patch is based on OpenAI Codex and provided under the Apache License 2.0; see [NOTICE](NOTICE).
+- The Copilot version's release package includes Microsoft's official `conpty.dll` and `OpenConsole.exe` (MIT, unmodified).
+- This is an unofficial project and not a product of OpenAI or GitHub. magicopilot does not include, modify or redistribute GitHub Copilot CLI; it starts the copy you installed yourself.
+
+## Development
+
+Building from source, the patch structure, testing and the full verification records are covered in [docs/development.md](docs/development.md) (in Chinese).
+
+</details>
+
+> **还在对着终端，枯燥地等待模型的回复吗？**
+>
+> 现在，命运给了你一个选择——**转职成为 AI 祈祷师**。
+>
+> 执掌风、火、水、雷、土、神圣、黑暗、诡异、科技与经典十系法阵，以 prompt 为咒文，以等待为献祭，在终端中构筑你的祈祷。等得越久，法阵越是繁复宏大，你的咒文与神明的低语绕阵流转；待神谕降临，法阵定格，光自阵心倾泻而下——静心聆听，那是模型之神的指引。
+>
+> 等待不会变短，但从此不再无聊。
 
 让 AI 编程助手在终端里“施法”。你提交 prompt 后，一座动漫风格的魔法阵在终端里展开，等得越久，它就越大、越复杂；你的 prompt 和模型的中间回复沿着法阵的圆环旋转；最终回答到来时，魔法生效，文字从法阵下方倾泻而出。
 
