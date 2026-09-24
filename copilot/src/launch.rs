@@ -35,13 +35,14 @@ Non-interactive runs (-p/--prompt, --acp, --help, --version, subcommands) and ru
 without a console are passed straight through without the circle.
 ";
 
-const SUBCOMMANDS: [&str; 14] = [
+const SUBCOMMANDS: [&str; 15] = [
     "app",
     "login",
     "help",
     "init",
     "update",
     "version",
+    "workflow",
     "sessions",
     "memories",
     "plugin",
@@ -408,6 +409,7 @@ mod tests {
             &["--acp"],
             &["--help"],
             &["mcp", "list"],
+            &["workflow", "run", "nightly"],
             &["--model", "x", "update"],
         ] {
             assert_eq!(options(args).action, Action::PassThrough, "{args:?}");
