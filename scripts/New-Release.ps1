@@ -210,7 +210,7 @@ function New-CopilotPackage([string]$Stage, [string]$Version) {
         variant = 'copilot'
         version = $Version
         description = 'GitHub Copilot CLI with the Magicodex magic circle (wrapper around the installed, unmodified Copilot CLI)'
-        requires = 'GitHub Copilot CLI installed and signed in (tested with 1.0.89); Windows 10 1809 or later'
+        requires = 'GitHub Copilot CLI installed and signed in (tested with 1.0.87 and 1.0.88); Windows 10 1809 or later'
         commands = [ordered]@{ 'magicopilot' = 'magicopilot.exe' }
     })
 }
@@ -226,11 +226,11 @@ function Get-FileTable([string]$Stage) {
 function Get-InstallSnippet([string]$Tag, [string]$VariantName) {
     @"
 ``````powershell
-gh release download $Tag --repo $Repo --pattern install.ps1
+Invoke-WebRequest -UseBasicParsing https://github.com/$Repo/releases/download/$Tag/install.ps1 -OutFile install.ps1
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Variant $VariantName
 ``````
 
-``install.ps1`` 下载本发布的 zip，按 ``SHA256SUMS.txt`` 校验后安装到 ``%LOCALAPPDATA%\Magicodex``，命令入口在 ``%LOCALAPPDATA%\Magicodex\bin``（加 ``-AddToPath`` 才会写入用户 PATH）。不带参数运行可交互选择版本；``-List`` 列出所有发布，``-Uninstall -Variant $VariantName`` 卸载。也可以直接解压 zip 使用。
+``install.ps1`` 下载本发布的 zip（不需要 GitHub 账号），按 ``SHA256SUMS.txt`` 校验后安装到 ``%LOCALAPPDATA%\Magicodex``，命令入口在 ``%LOCALAPPDATA%\Magicodex\bin``（加 ``-AddToPath`` 才会写入用户 PATH）。不带参数运行可交互选择版本；``-List`` 列出所有发布，``-Uninstall -Variant $VariantName`` 卸载。也可以直接解压 zip 使用。
 "@
 }
 
@@ -319,7 +319,7 @@ $(Get-InstallSnippet "copilot-v$($versions.copilot)" 'copilot')
 ## 要求
 
 - Windows 10 1809 或更高版本，x64；推荐 Windows Terminal
-- 已安装并登录 GitHub Copilot CLI（验证于 1.0.87 与 1.0.89-1）
+- 已安装并登录 GitHub Copilot CLI（验证于 1.0.87 与 1.0.88）
 
 ## 工作方式与限制
 
@@ -327,7 +327,7 @@ $(Get-InstallSnippet "copilot-v$($versions.copilot)" 'copilot')
 
 ## 验证
 
-真实 Copilot CLI + 本地假模型服务（BYOK 离线，不消耗额度），在 Windows Terminal 与通用两种模式下。本版（0.3.1）在 Copilot CLI 1.0.87 上跑完全部检查，0.3.0 的检查曾在 1.0.89-1 上通过。召唤法阵：用 3 秒后才输出的替身代替 Copilot，法阵出现、转动变大、含“召唤”文字，替身的文字出现后法阵散成光尘且不盖住文字，随后只剩待机小阵；真实 Copilot 加载时屏幕上同样是召唤法阵。其余：待机 5 行 → 施法 21 行且点阵随时间变大 → prompt 与中间回复环绕 → 出口 24 行，实测保留 15.0 秒 → 1.6 秒内暗淡扩散 → 回到待机；``/magic list`` 的随机项预览并选用后换成另一种法阵；输入 ``/ma`` 时法阵区域显示 ``/magic`` 用法提示、不改变区域高度、不产生模型请求；``/magic off``、``/magic 火``、``/magic list`` 的预览 / Esc / 数字选择，命令后多打空格或光标移回命令中间时输入框同样清空，窗口太矮时 ``/magic list`` 只提示不接管按键；鼠标点击 Copilot 标签页；``/exit`` 恢复终端并保留 Copilot 的退出摘要（含 ``--resume=``）；与直接运行 Copilot 相比，发给模型的系统提示与工具列表一致、输入框样式一致；``magicopilot workflow`` 直接透传；蓄力时两侧显示咏唱记录（fixture 的 ``glob`` 调用显示为“寻踪术 *.md”）、施法状态与使魔，出口时显示“神谕降临”；60 项单元测试（含召唤法阵的时序与不遮挡、10 种法阵的占用区实测、宽度分级、无动画时静止、出口与消散时序、随机抽签、真实批处理文件的参数转义）。``--continue`` 与 ``/clear`` 后的会话跟随在 0.1.0（Copilot 1.0.87）上验证过，之后未改动这部分。**预发布**：尚未在人工操作的真实 Windows Terminal 窗口中验收。
+真实 Copilot CLI + 本地假模型服务（BYOK 离线，不消耗额度），在 Windows Terminal 与通用两种模式下。本版（0.3.1）在 Copilot CLI 1.0.87 与 1.0.88 上跑完全部检查，0.3.0 的检查曾在 1.0.89-1 上通过。召唤法阵：用 3 秒后才输出的替身代替 Copilot，法阵出现、转动变大、含“召唤”文字，替身的文字出现后法阵散成光尘且不盖住文字，随后只剩待机小阵；真实 Copilot 加载时屏幕上同样是召唤法阵。其余：待机 5 行 → 施法 21 行且点阵随时间变大 → prompt 与中间回复环绕 → 出口 24 行，实测保留 15.0 秒 → 1.6 秒内暗淡扩散 → 回到待机；``/magic list`` 的随机项预览并选用后换成另一种法阵；输入 ``/ma`` 时法阵区域显示 ``/magic`` 用法提示、不改变区域高度、不产生模型请求；``/magic off``、``/magic 火``、``/magic list`` 的预览 / Esc / 数字选择，命令后多打空格或光标移回命令中间时输入框同样清空，窗口太矮时 ``/magic list`` 只提示不接管按键；鼠标点击 Copilot 标签页；``/exit`` 恢复终端并保留 Copilot 的退出摘要（含 ``--resume=``）；与直接运行 Copilot 相比，发给模型的系统提示与工具列表一致、输入框样式一致；``magicopilot workflow`` 直接透传；蓄力时两侧显示咏唱记录（fixture 的 ``glob`` 调用显示为“寻踪术 *.md”）、施法状态与使魔，出口时显示“神谕降临”；60 项单元测试（含召唤法阵的时序与不遮挡、10 种法阵的占用区实测、宽度分级、无动画时静止、出口与消散时序、随机抽签、真实批处理文件的参数转义）。``--continue`` 与 ``/clear`` 后的会话跟随在 0.1.0（Copilot 1.0.87）上验证过，之后未改动这部分。**预发布**：尚未在人工操作的真实 Windows Terminal 窗口中验收。
 
 __FILES__
 "@

@@ -17,7 +17,7 @@ Let your AI coding assistant cast spells in the terminal. When you submit a prom
 
 Works with **GitHub Copilot CLI** and **OpenAI Codex CLI**. The original program's interface, shortcuts, commands and default prompt stay unchanged. If you'd rather not see the circle, type `/magic off` to turn it off.
 
-![Casting on Copilot CLI: the idle circle, intermediate replies orbiting it, the final reply released below it, and the style picker](docs/images/magicopilot.png)
+![magicopilot on Copilot CLI: the summoning circle while Copilot starts, casting with the grimoire beside the circle, the answer pouring out below it, and the style picker](docs/images/magicopilot.png)
 
 ## Features
 
@@ -45,17 +45,18 @@ The earliest version, a standalone frontend with its own interface, has been arc
 **Prerequisites**
 
 - Windows 10/11 x64; [Windows Terminal](https://aka.ms/terminal) is recommended.
-- copilot: GitHub Copilot CLI installed and signed in (`npm install -g @github/copilot`; verified on 1.0.89).
+- copilot: GitHub Copilot CLI installed and signed in (`npm install -g @github/copilot`; tested with 1.0.87 and 1.0.88).
 - codex: a Codex account (a ChatGPT account or an API key). You don't need to install the official Codex separately.
-- The repository is currently private, so downloading requires a signed-in [GitHub CLI](https://cli.github.com/) (`gh auth login`).
 
 **Steps**
 
-1. Download the installer:
+1. Download the installer, in PowerShell:
 
    ```powershell
-   gh release download --repo dengyanbo/Magicodex --pattern install.ps1 --clobber
+   Invoke-WebRequest -UseBasicParsing https://github.com/dengyanbo/Magicodex/releases/latest/download/install.ps1 -OutFile install.ps1
    ```
+
+   Or save `install.ps1` from the [Releases](https://github.com/dengyanbo/Magicodex/releases) page with your browser, and run step 2 in the folder you saved it to.
 
 2. Run the installer and choose a version from the menu (`-AddToPath` adds the commands to PATH):
 
@@ -65,9 +66,9 @@ The earliest version, a standalone frontend with its own interface, has been arc
 
    You can also name the version directly: `-Variant copilot` or `-Variant codex`.
 
-3. Open a **new** terminal window and run `magicopilot` or `magicodex`.
+3. Open a **new** terminal window and run `magicopilot` or `magicodex`. (If a new Windows Terminal tab still can't find the command, close Windows Terminal completely and reopen it.)
 
-The installer first verifies the downloaded files against `SHA256SUMS.txt`, then installs them to `%LOCALAPPDATA%\Magicodex`. Without `-AddToPath`, it leaves PATH alone. It runs on both Windows PowerShell 5.1 and PowerShell 7. You can also download a zip from the [Releases](https://github.com/dengyanbo/Magicodex/releases) page, extract it and run it directly.
+The installer downloads from GitHub's public release pages (no GitHub account needed), verifies the files against `SHA256SUMS.txt`, then installs them to `%LOCALAPPDATA%\Magicodex`. Without `-AddToPath`, it leaves PATH alone. It runs on both Windows PowerShell 5.1 and PowerShell 7. You can also download a zip from the [Releases](https://github.com/dengyanbo/Magicodex/releases) page, extract it and run it directly.
 
 <details>
 <summary>All installer options</summary>
@@ -97,7 +98,14 @@ magicopilot --resume                # resume an earlier session
 magicopilot --magic-style thunder   # start with the Thunder circle
 ```
 
-The circle is on by default and drawn above Copilot's interface: 5 rows when idle, 21 while casting and 24 while releasing the answer, and Copilot always keeps at least 14 rows. After the answer, the settled circle stays for 15 seconds, then dims and scatters into dust before the idle emblem returns (an interrupted turn fades the same way). When Copilot asks for permission, the circle shrinks to make room; in windows shorter than 19 rows it hides automatically. What appears beside the charging circle depends on the width: pillars and particles from 65 columns, the grimoire pages from 89, and argument details and the familiar from 109. More options are described in [copilot/README.md](copilot/README.md) (in Chinese).
+The circle is on by default:
+
+- While Copilot is still loading, a summoning circle fills the empty screen; it scatters into dust as soon as Copilot appears.
+- After that, it sits above Copilot's interface: 5 rows when idle, 21 while casting and 24 while releasing the answer. Copilot always keeps at least 14 rows. When Copilot asks for permission, the circle shrinks to make room; in windows shorter than 19 rows it hides automatically.
+- After the answer, the settled circle stays for 15 seconds, then dims and scatters into dust before the idle emblem returns (an interrupted turn fades the same way).
+- What appears beside the charging circle depends on the width: pillars and particles from 65 columns, the grimoire pages from 89, and argument details and the familiar from 109.
+
+To start with another style, with the circle hidden or without motion, or with a specific Copilot CLI, see the options in [copilot/README.md](copilot/README.md) (in Chinese).
 
 ### Codex CLI: `magicodex`
 
@@ -120,7 +128,7 @@ In either version, type these commands **in the input box** and press Enter:
 | `/magic <style>` | Switches directly, e.g. `/magic fire` or `/magic 火` |
 | `/magic random` (or `/magic 随机`) | Casts a different circle every turn, never the same one twice in a row; also the last item of the list |
 
-These commands are handled locally and never sent to the model. Settings only last for the current run and go back to the defaults when you restart. In Codex, don't pass `/magic on` as a command-line argument, or it will be sent to the model as a prompt.
+These commands are handled locally and never sent to the model. Settings only last for the current run and go back to the defaults when you restart; in magicopilot you can set a default style with `--magic-style <style>` or the `MAGICOPILOT_STYLE` environment variable. In Codex, don't pass `/magic on` as a command-line argument, or it will be sent to the model as a prompt.
 
 Copilot's own command list never shows `/magic`, because Copilot builds that list itself. So as you type `/` or the start of `/magic`, magicopilot shows its usage in the top-left corner of the circle area; just press Enter as usual.
 
@@ -151,7 +159,7 @@ These images were rendered from the terminal contents of the real programs, driv
 
 ## Updating and uninstalling
 
-All of these commands need `install.ps1`, which you can download again at any time with the `gh release download` command above.
+All of these commands need `install.ps1`; you can download it again at any time as in step 1 of the installation above.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -List                        # list available and installed versions
@@ -183,6 +191,12 @@ The circle is drawn with Braille dot characters (such as ⣿) and Chinese text. 
 **What happens if the window is too small?**
 
 The Copilot version hides the circle in windows shorter than 19 rows; `/magic list` then only shows a notice, and you can switch with `/magic <style>` directly. The Codex version leaves out the circle's inner details when space runs short.
+
+**Will a Copilot CLI or Codex update break it?**
+
+magicopilot runs whichever Copilot CLI you have installed, so a Copilot update takes effect right away. magicopilot relies on a few things Copilot doesn't promise to keep, such as its input box, its session logs and its command-line options, so a new Copilot version can occasionally break part of it. This has happened once: a Copilot 1.0.89 prerelease added a `workflow` command that magicopilot 0.1.0 couldn't start (fixed in 0.1.1). If something stops working, run `copilot` directly until a fixed magicopilot is out.
+
+magicodex ships its own patched Codex 0.153.4, so updating the official Codex doesn't change it. That also means it doesn't get new Codex features, and models that require a newer Codex may not be available in it, until the patch is ported to a newer Codex. `magicodex-bridge` checks that the Codex your bridge uses is also 0.153.4 and refuses to start otherwise.
 
 **Does the Codex version affect my installed official Codex?**
 
@@ -228,7 +242,7 @@ Building from source, the patch structure, testing and the full verification rec
 
 支持 **GitHub Copilot CLI** 和 **OpenAI Codex CLI**。原程序的界面、快捷键、命令和默认 prompt 都保持不变；不想看的时候，输入 `/magic off` 就能关掉。
 
-![在 Copilot CLI 上施法：待机小阵、中间回复环绕、最终回复从法阵下方释放、法阵类型选择器](docs/images/magicopilot.png)
+![magicopilot 在 Copilot CLI 上：启动时的召唤法阵、施法时两侧的魔导书、回答从法阵下方释放、法阵类型选择器](docs/images/magicopilot.png)
 
 ## 特点
 
@@ -256,17 +270,18 @@ Building from source, the patch structure, testing and the full verification rec
 **准备**
 
 - Windows 10/11 x64，推荐使用 [Windows Terminal](https://aka.ms/terminal)。
-- copilot 版：已安装并登录 GitHub Copilot CLI（`npm install -g @github/copilot`，已在 1.0.89 上验证）。
+- copilot 版：已安装并登录 GitHub Copilot CLI（`npm install -g @github/copilot`，已在 1.0.87 和 1.0.88 上测试）。
 - codex 版：Codex 账号（ChatGPT 账号或 API key）；不需要另外安装官方 Codex。
-- 仓库目前是私有的，下载需要已登录的 [GitHub CLI](https://cli.github.com/)（`gh auth login`）。
 
 **安装步骤**
 
-1. 下载安装脚本：
+1. 在 PowerShell 中下载安装脚本：
 
    ```powershell
-   gh release download --repo dengyanbo/Magicodex --pattern install.ps1 --clobber
+   Invoke-WebRequest -UseBasicParsing https://github.com/dengyanbo/Magicodex/releases/latest/download/install.ps1 -OutFile install.ps1
    ```
+
+   也可以用浏览器从 [Releases](https://github.com/dengyanbo/Magicodex/releases) 页面保存 `install.ps1`，再在保存它的文件夹里执行第 2 步。
 
 2. 运行安装脚本，按菜单选择版本（`-AddToPath` 会把命令加入 PATH）：
 
@@ -276,9 +291,9 @@ Building from source, the patch structure, testing and the full verification rec
 
    也可以直接指定版本：`-Variant copilot` 或 `-Variant codex`。
 
-3. 打开一个**新的**终端窗口，运行 `magicopilot` 或 `magicodex`。
+3. 打开一个**新的**终端窗口，运行 `magicopilot` 或 `magicodex`。（如果 Windows Terminal 新开的标签页仍找不到命令，把 Windows Terminal 整个关掉再打开。）
 
-安装脚本会先用 `SHA256SUMS.txt` 校验下载的文件，再安装到 `%LOCALAPPDATA%\Magicodex`；不加 `-AddToPath` 就不会改动 PATH。Windows PowerShell 5.1 和 PowerShell 7 都可以运行。也可以在 [Releases](https://github.com/dengyanbo/Magicodex/releases) 页面下载 zip，解压后直接运行。
+安装脚本从 GitHub 的公开发布页下载（不需要 GitHub 账号），先用 `SHA256SUMS.txt` 校验，再安装到 `%LOCALAPPDATA%\Magicodex`；不加 `-AddToPath` 就不会改动 PATH。Windows PowerShell 5.1 和 PowerShell 7 都可以运行。也可以在 [Releases](https://github.com/dengyanbo/Magicodex/releases) 页面下载 zip，解压后直接运行。
 
 <details>
 <summary>安装脚本的全部参数</summary>
@@ -308,7 +323,14 @@ magicopilot --resume           # 恢复之前的会话
 magicopilot --magic-style 雷   # 以雷系法阵启动
 ```
 
-法阵默认开启，画在 Copilot 界面的上方：待机时占 5 行，施法时 21 行，释放回答时 24 行，Copilot 始终至少保留 14 行。回答之后，定格的法阵保留 15 秒，然后暗淡下去、向外扩散成点尘，再回到待机小阵（被中断的回合也这样消散）。Copilot 请求权限确认时，法阵会缩小让出空间；窗口低于 19 行时法阵自动隐藏。蓄力时两侧显示什么取决于窗口宽度：65 列起有法阵柱和粒子，89 列起有两页魔导书，109 列起再加上参数摘要和使魔。更多参数见 [copilot/README.md](copilot/README.md)。
+法阵默认开启：
+
+- Copilot 还在加载时，空白的屏幕上会展开一座召唤法阵；Copilot 一出现，它就化为光尘散去。
+- 之后法阵画在 Copilot 界面的上方：待机时占 5 行，施法时 21 行，释放回答时 24 行，Copilot 始终至少保留 14 行。Copilot 请求权限确认时，法阵会缩小让出空间；窗口低于 19 行时法阵自动隐藏。
+- 回答之后，定格的法阵保留 15 秒，然后暗淡下去、向外扩散成点尘，再回到待机小阵（被中断的回合也这样消散）。
+- 蓄力时两侧显示什么取决于窗口宽度：65 列起有法阵柱和粒子，89 列起有两页魔导书，109 列起再加上参数摘要和使魔。
+
+想换一种法阵启动、启动时隐藏法阵或关闭动画、指定 Copilot CLI 的路径，见 [copilot/README.md](copilot/README.md) 里的参数。
 
 ### Codex CLI：`magicodex`
 
@@ -331,7 +353,7 @@ magicopilot --magic-style 雷   # 以雷系法阵启动
 | `/magic <类型>` | 直接切换，例如 `/magic fire`、`/magic 火` |
 | `/magic 随机`（或 `/magic random`） | 每个回合随机换一种法阵，不会连续两次相同；也是列表的最后一项 |
 
-这些命令只在本机处理，不会发给模型。设置只在本次运行中有效，重新启动后恢复默认。在 Codex 里不要把 `/magic on` 写在命令行参数里，那样它会被当成发给模型的 prompt。
+这些命令只在本机处理，不会发给模型。设置只在本次运行中有效，重新启动后恢复默认；magicopilot 可以用 `--magic-style <类型>` 或环境变量 `MAGICOPILOT_STYLE` 指定默认法阵。在 Codex 里不要把 `/magic on` 写在命令行参数里，那样它会被当成发给模型的 prompt。
 
 Copilot 自己的命令列表里不会出现 `/magic`，因为那份列表由 Copilot 生成。所以输入 `/` 或 `/magic` 的开头时，magicopilot 会在法阵区域左上角显示它的用法，照常回车即可。
 
@@ -362,7 +384,7 @@ Copilot 自己的命令列表里不会出现 `/magic`，因为那份列表由 Co
 
 ## 更新与卸载
 
-以下命令都需要 `install.ps1`，它可以随时用上面的 `gh release download` 命令重新下载。
+以下命令都需要 `install.ps1`，可以随时按上面“安装”的第 1 步重新下载。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -List                        # 查看可用与已安装的版本
@@ -394,6 +416,12 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall -Variant copil
 **窗口太小会怎样？**
 
 Copilot 版在窗口低于 19 行时隐藏法阵；这时 `/magic list` 只显示提示，可以直接用 `/magic <类型>` 切换。Codex 版在空间不足时会省略法阵的内层细节。
+
+**Copilot CLI 或 Codex 升级后，会影响它吗？**
+
+magicopilot 运行的是你安装的 Copilot CLI，Copilot 一升级就立刻生效。magicopilot 依赖 Copilot 没有承诺保持不变的几处地方（输入框的样子、会话记录、命令行参数），所以新版 Copilot 偶尔可能让它部分失效。这种情况出现过一次：Copilot 1.0.89 的预发布版新增了 `workflow` 命令，magicopilot 0.1.0 无法启动它（0.1.1 已修复）。遇到问题时，可以先直接运行 `copilot`，等 magicopilot 发布修复。
+
+magicodex 自带补丁版 Codex 0.153.4，升级官方 Codex 不会改变它；但也因此用不上 Codex 的新功能，要求更新版本 Codex 的新模型在它里面也可能用不了，直到补丁移植到新版 Codex。`magicodex-bridge` 会检查你的桥接使用的 Codex 是否也是 0.153.4，不是就拒绝启动。
 
 **Codex 版会影响我已安装的官方 Codex 吗？**
 

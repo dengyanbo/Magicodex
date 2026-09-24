@@ -16,7 +16,7 @@ Copilot CLI 自己的界面、快捷键、默认 prompt、斜杠命令、会话�
 ## 前提
 
 - Windows 10 1809 及以上，x64；推荐 Windows Terminal（其他支持 VT 的控制台也可以）。
-- 已安装并登录 GitHub Copilot CLI（`npm install -g @github/copilot`，或其他官方安装方式），`copilot` 在 PATH 中；也可以用 `--magic-copilot <路径>` 指定。已在 Copilot CLI 1.0.89 上验证。
+- 已安装并登录 GitHub Copilot CLI（`npm install -g @github/copilot`，或其他官方安装方式），`copilot` 在 PATH 中；也可以用 `--magic-copilot <路径>` 指定。已在 Copilot CLI 1.0.87 和 1.0.88 上测试。
 
 ## 安装
 

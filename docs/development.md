@@ -48,7 +48,7 @@ pwsh -File scripts\New-Release.ps1 -Publish           # 生成并创建 GitHub R
 
 `install.ps1` 支持 Windows PowerShell 5.1 与 PowerShell 7，行为如下：
 
-- 仓库为私有时，通过 `gh api` 列出发布、用 `gh release download` 下载；公开仓库时可走 REST；`-Source <目录>` 从本地 zip 安装，不联网。
+- 列出与下载发布：已登录的 `gh` 可用时通过 `gh api` 与 `gh release download`（仓库私有时必须如此）；没有 `gh` 或未登录时，走 GitHub REST API 与发布资产的直链（公开仓库，无需账号；已在 PowerShell 5.1 与 7 上隐藏 `gh` 验证列出、安装、卸载）；`-Source <目录>` 从本地 zip 安装，不联网。
 - 先按 `SHA256SUMS.txt` 校验 zip，再解压到 `<安装目录>\<类型>\<版本>.partial`，核对包内的 `magicodex-package.json` 后才移到位；`-Force` 重装时，新包就绪后才替换旧的。命令入口是 `<安装目录>\bin\*.cmd`，按相对路径指向当前版本，路径中的非 ASCII 字符不会经过 cmd.exe 的代码页。
 - 只删除自己创建的目录，即带有该类型 `magicodex-package.json` 的目录，或 `.old-xxxxxxxx` 残留。删除或替换前，逐个文件以读写方式试开，检查目录是否在用（运行中的 EXE/DLL、被占用的文件）；在用时，升级保留旧版本，`-Force` 与卸载则拒绝且不做改动。这是因为 Windows 允许重命名运行中程序所在的目录，先改名再删会把目录删到只剩 EXE。
 - 相对 `-InstallDir` 以当前 PowerShell 位置为准。PATH 只在 `-AddToPath` 时修改，并保留 `REG_EXPAND_SZ`。测试时可用环境变量 `MAGICODEX_INSTALL_ENV_KEY` 把 PATH 的注册表键换成 HKCU 下的测试键。
@@ -414,6 +414,7 @@ uv run --no-project --with pyte --with pywinpty --with psutil --with wcwidth --w
   - 真实 Copilot 启动 1.5 秒时仍在加载，屏幕上是召唤法阵（顶部 5 行为空）。
   - 其余检查与 0.3.0 相同，全部通过。
   - 统计会话数时排除 Copilot 有时会建的隐藏目录 `.session-operation-locks`（此前会被误算成第二个会话）。
+- 之后本机 Copilot CLI 升级到 1.0.88，用已发布的 0.3.1 重跑端到端测试：Windows Terminal 模式（含 `--baseline` 对比）与通用模式全部通过，数值与 1.0.87 相同（召唤法阵 13 行、光尘 19 行、出口 15.0 秒、消散 1.6 秒）。README 的两张截图用这次的画面与 Codex 0.7.0 的渲染重新生成。
 - 60 项单元测试通过（新增 3 项：召唤的起止与时序、关闭或无动画时不出现、prompt 结束召唤；整屏渲染时召唤法阵不画待机小阵、随时间变大、含召唤文字，散去时不碰 Copilot 的文字并留出 2 列空白，1.6 秒后只剩待机小阵）；Clippy（`-D warnings`）无告警。
 
 ### 验证记录（0.3.0）

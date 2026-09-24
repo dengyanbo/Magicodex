@@ -327,6 +327,8 @@ model_provider = "magic_test"
 approval_policy = "on-request"
 sandbox_mode = "read-only"
 web_search = "disabled"
+# This runs codex.exe directly: never let its update prompt install another Codex.
+check_for_update_on_startup = false
 [features]
 enable_request_compression = false
 multi_agent = false
