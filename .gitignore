@@ -18,7 +18,7 @@ __pycache__/
 /*.sqlite
 /*.sqlite-*
 /*.db
-# Conversation exports written to the working directory: standalone Ctrl+S, copilot --share
+# Conversation exports written to the working directory: copilot --share, the archived standalone's Ctrl+S
 /magicodex-[0-9]*.json
 /magicodex-demo-[0-9]*.txt
 /copilot-session-*.md

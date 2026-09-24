@@ -10,7 +10,6 @@
 | `upstream\codex-rust-v0.153.4\` | 与 Codex 发布标签对应的源码，已应用 Magicodex 补丁 |
 | `native-patch\` | 相对上游源码的补丁 0001–0005 与 `manifest.json` |
 | `native\` | 本机构建并发布的补丁版 `codex.exe`（不在 Git 中） |
-| `src\`、`Cargo.toml` | 最早的独立前端（standalone），说明见 [README-standalone.md](../README-standalone.md) |
 | `scripts\` | 构建、导出补丁、打包与发布脚本 |
 | `tests\` | 端到端验收与画面渲染脚本 |
 | `packaging\` | 发布包内的说明与许可声明 |
@@ -20,21 +19,21 @@
 
 ## Git 仓库范围
 
-仓库包含项目源码（根目录独立前端、`copilot\` 外壳）、修改后的上游源码、补丁、打包与构建脚本，保留上游许可证与声明；不提交 EXE、依赖缓存、源码 ZIP、用户配置、数据库或对话导出。克隆后需按下文构建，Git 仓库本身不包含本地已生成的二进制。许可证范围见 `LICENSE` 和 `NOTICE`。
+仓库包含项目源码（`copilot\` 外壳）、修改后的上游源码、补丁、打包与构建脚本，保留上游许可证与声明；不提交 EXE、依赖缓存、源码 ZIP、用户配置、数据库或对话导出。克隆后需按下文构建，Git 仓库本身不包含本地已生成的二进制。许可证范围见 `LICENSE` 和 `NOTICE`。
 
 ## 发布
 
-每个版本是一个独立的 GitHub Release：`codex-v*`、`copilot-v*`、`standalone-v*`。每个 Release 附 zip、`SHA256SUMS.txt` 和同一份 `install.ps1`。
+每个版本是一个独立的 GitHub Release：`codex-v*`、`copilot-v*`（已归档的独立前端为 `standalone-v*`）。每个 Release 附 zip、`SHA256SUMS.txt` 和同一份 `install.ps1`。
 
 ```powershell
-pwsh -File scripts\New-Release.ps1                    # 在 dist\<标签>\ 生成三个版本的包与发布说明，不上传
+pwsh -File scripts\New-Release.ps1                    # 在 dist\<标签>\ 生成两个版本的包与发布说明，不上传
 pwsh -File scripts\New-Release.ps1 -Variant copilot   # 只生成一个版本
 pwsh -File scripts\New-Release.ps1 -Publish           # 生成并创建 GitHub Release
 ```
 
 - `-Publish` 要求工作区干净、HEAD 已推送、`gh` 已登录，因为标签指向 HEAD；同名 Release 已存在时停止。
 - codex 版本为 Latest；copilot 版本是预发布，不标为 Latest。
-- 版本号：codex 版本写在 `New-Release.ps1` 的 `$codexVersion`（对应补丁系列），copilot 与 standalone 取各自 `Cargo.toml`。
+- 版本号：codex 版本写在 `New-Release.ps1` 的 `$codexVersion`（对应补丁系列），copilot 取 `copilot\Cargo.toml`。
 - 每个包带有 `magicodex-package.json`（版本类型、版本号、源码提交、命令列表），安装器据此创建命令入口，并以此识别自己安装的目录。
 - 构建脚本用 `--remap-path-prefix` 把用户目录映射为 `~`，发布的二进制不含本机用户名（依赖与标准库源码路径会写进 panic 信息）。该参数通过 cargo `--config` 追加到 rustflags；不要改用 `RUSTFLAGS` 环境变量，它会覆盖 `codex-rs\.cargo\config.toml` 中的 8 MiB 栈与静态 CRT 设置。
 
@@ -42,7 +41,6 @@ pwsh -File scripts\New-Release.ps1 -Publish           # 生成并创建 GitHub R
 
 - **codex**：沿用官方 npm 包 `@openai/codex-win32-x64` 的目录布局（`bin\`、`codex-resources\`、`codex-path\`、`codex-package.json`），只替换 `bin\codex.exe`，因此沙箱辅助程序和内置 ripgrep 照常可用。其余文件从本机官方 0.153.4 安装复制，并校验 OpenAI 签名。
 - **copilot**：`magicopilot.exe`，加上微软官方 NuGet 包 Microsoft.Windows.Console.ConPTY 1.24.260710001 中的 `conpty.dll`、`OpenConsole.exe`（MIT，微软签名，未修改；构建脚本固定其 SHA256）。
-- **standalone**：`magicodex.exe`。
 - 每个包都附第三方许可 `THIRD-PARTY-NOTICES.md`，由 `scripts\Write-ThirdPartyNotices.py` 根据 `cargo metadata` 生成。
 
 ### 安装器
@@ -53,6 +51,7 @@ pwsh -File scripts\New-Release.ps1 -Publish           # 生成并创建 GitHub R
 - 先按 `SHA256SUMS.txt` 校验 zip，再解压到 `<安装目录>\<类型>\<版本>.partial`，核对包内的 `magicodex-package.json` 后才移到位；`-Force` 重装时，新包就绪后才替换旧的。命令入口是 `<安装目录>\bin\*.cmd`，按相对路径指向当前版本，路径中的非 ASCII 字符不会经过 cmd.exe 的代码页。
 - 只删除自己创建的目录，即带有该类型 `magicodex-package.json` 的目录，或 `.old-xxxxxxxx` 残留。删除或替换前，逐个文件以读写方式试开，检查目录是否在用（运行中的 EXE/DLL、被占用的文件）；在用时，升级保留旧版本，`-Force` 与卸载则拒绝且不做改动。这是因为 Windows 允许重命名运行中程序所在的目录，先改名再删会把目录删到只剩 EXE。
 - 相对 `-InstallDir` 以当前 PowerShell 位置为准。PATH 只在 `-AddToPath` 时修改，并保留 `REG_EXPAND_SZ`。测试时可用环境变量 `MAGICODEX_INSTALL_ENV_KEY` 把 PATH 的注册表键换成 HKCU 下的测试键。
+- 已归档的 standalone 不再出现在发布列表和菜单中，`-Variant standalone` 安装会直接报错；已安装的副本仍在 `-List` 中列出，并可用 `-Uninstall -Variant standalone` 卸载。
 
 ## Codex 原生补丁
 
@@ -80,7 +79,7 @@ pwsh -File scripts\New-Release.ps1 -Publish           # 生成并创建 GitHub R
 
 补丁入口在当前进程关闭原版的启动更新弹窗：该弹窗会调用上游安装器，无法更新这份 UI 补丁，还可能安装另一份未打补丁的 Codex。补丁升级由本项目构建和发布管理。这是发行管理上的限制，不修改原始配置文件、系统提示词或快捷键。系统中原来的 Codex 入口仍保留其原有更新行为。
 
-原生补丁的发布包含 Codex 本体及同版本的原始运行组件，体积远大于约 1.1 MiB 的独立前端：当前发布的补丁版主程序约 283.76 MiB，未修改的 code-mode host 约 69.12 MiB，发布 zip 约 137 MiB。这是磁盘体积，不代表运行内存。选择原生补丁，是用更大的构建和分发体积换取真实的原版交互兼容。
+原生补丁的发布包含 Codex 本体及同版本的原始运行组件，体积远大于约 1.1 MiB 的独立前端（已归档）：当前发布的补丁版主程序约 283.76 MiB，未修改的 code-mode host 约 69.12 MiB，发布 zip 约 137 MiB。这是磁盘体积，不代表运行内存。选择原生补丁，是用更大的构建和分发体积换取真实的原版交互兼容。
 
 ### 源码与补丁
 
@@ -358,6 +357,6 @@ uv run --no-project --with pyte --with pywinpty --with psutil --with wcwidth --w
   - 外壳：非 npm 的 `.cmd` 入口可被参数注入命令，路径末尾带点或空格可绕过转义（同 CVE-2024-43402）；命令末尾空格残留；窗口过矮时看不见的选择器吞掉按键。
 - 尚未在人工操作的真实 Windows Terminal 窗口中验收，所以发布为预发布版；字体、输入法与主观观感需要实际使用确认。
 
-## 独立前端（standalone）
+## 独立前端（standalone，已归档）
 
-最早的版本：通过 Codex app-server 连接 Codex，自绘整套界面。用 `scripts\Build.ps1` 构建（GNU 工具链），说明与验证记录见 [README-standalone.md](../README-standalone.md)。
+最早的版本：通过 Codex app-server 连接 Codex，自绘整套界面。已归档，不再构建或发布；代码、构建脚本（`scripts\Build.ps1`）、测试与说明（`README-standalone.md`）保存在 [`archive/standalone`](https://github.com/dengyanbo/Magicodex/tree/archive/standalone) 分支，最后的发布是 `standalone-v0.1.0`。

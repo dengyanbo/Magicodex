@@ -1,10 +1,10 @@
 ﻿<#
 .SYNOPSIS
-安装 Magicodex 发布版：Codex CLI 原生补丁、GitHub Copilot CLI 外壳或独立前端。
-Installs a Magicodex release: the Codex CLI patch, the Copilot CLI wrapper or the standalone frontend.
+安装 Magicodex 发布版：Codex CLI 原生补丁或 GitHub Copilot CLI 外壳；已归档的独立前端只能卸载。
+Installs a Magicodex release: the Codex CLI patch or the Copilot CLI wrapper. The archived standalone frontend can only be uninstalled.
 
 .DESCRIPTION
-每种版本是一个独立的 GitHub Release（codex-v*、copilot-v*、standalone-v*）。本脚本列出发布、
+每种版本是一个独立的 GitHub Release（codex-v*、copilot-v*）。本脚本列出发布、
 下载所选版本、按 SHA256SUMS.txt 校验后解压到 <InstallDir>\<版本类型>\<版本号>，并在
 <InstallDir>\bin 创建命令入口。只有加 -AddToPath 才会修改用户 PATH。
 
@@ -59,6 +59,8 @@ $catalog = [ordered]@{
         Pattern = '^magicodex-standalone-(.+)-windows-x64\.zip$'
     }
 }
+# Archived variants are no longer offered; an installed copy is still listed and can be uninstalled.
+$archived = @('standalone')
 
 function Get-SortableVersion([string]$Text) {
     $core = ($Text -split '[-+]', 2)[0]
@@ -533,7 +535,7 @@ function Read-Choice([object[]]$Releases) {
         }
     }
     if (-not $options) { throw '没有可安装的发布。' }
-    if ([Console]::IsInputRedirected) { throw '请用 -Variant 指定要安装的版本（codex、copilot、standalone）。' }
+    if ([Console]::IsInputRedirected) { throw '请用 -Variant 指定要安装的版本（codex、copilot）。' }
     Write-Host 'Magicodex 可安装的版本：'
     for ($i = 0; $i -lt $options.Count; $i++) {
         $release = $options[$i]
@@ -553,7 +555,10 @@ if ($Uninstall) {
     return
 }
 
-$releases = @(Get-Releases)
+if ($Variant -and -not $List -and $archived -contains $Variant) {
+    throw "$Variant 已归档，不再提供安装。已安装的副本可以用 -Uninstall -Variant $Variant 卸载。"
+}
+$releases = @(Get-Releases | Where-Object { $archived -notcontains $_.Variant })
 if ($List) {
     Show-Releases $releases
     Show-Installed

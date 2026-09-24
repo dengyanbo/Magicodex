@@ -33,9 +33,10 @@ Works with **GitHub Copilot CLI** and **OpenAI Codex CLI**. The original program
 | --- | --- | --- | --- |
 | GitHub Copilot CLI | **copilot** (prerelease) | `magicopilot` | Runs the original Copilot CLI you installed and draws the circle above it |
 | OpenAI Codex CLI | **codex** (stable) | `magicodex` | Rebuilt from the Codex 0.153.4 source with a patch; the interface is the original Codex |
-| A fully custom-drawn interface | standalone (the earliest version) | `magicodex-standalone` | A standalone frontend that talks to Codex through its app-server, with only one circle |
 
 Why isn't the Copilot version a patch? The Copilot CLI license doesn't allow modifying it, so magicopilot is a wrapper: it starts the unmodified Copilot CLI you installed yourself and adds a magic circle area above it.
+
+The earliest version, a standalone frontend with its own interface, has been archived and is no longer maintained. Its code is kept on the [`archive/standalone`](https://github.com/dengyanbo/Magicodex/tree/archive/standalone) branch.
 
 ## Installation
 
@@ -44,7 +45,6 @@ Why isn't the Copilot version a patch? The Copilot CLI license doesn't allow mod
 - Windows 10/11 x64; [Windows Terminal](https://aka.ms/terminal) is recommended.
 - copilot: GitHub Copilot CLI installed and signed in (`npm install -g @github/copilot`; verified on 1.0.87).
 - codex: a Codex account (a ChatGPT account or an API key). You don't need to install the official Codex separately.
-- standalone: Codex CLI installed and configured. `magicodex-standalone --demo` runs an offline demo.
 - The repository is currently private, so downloading requires a signed-in [GitHub CLI](https://cli.github.com/) (`gh auth login`).
 
 **Steps**
@@ -61,7 +61,7 @@ Why isn't the Copilot version a patch? The Copilot CLI license doesn't allow mod
    powershell -ExecutionPolicy Bypass -File .\install.ps1 -AddToPath
    ```
 
-   You can also name the version directly: `-Variant copilot`, `-Variant codex` or `-Variant standalone`.
+   You can also name the version directly: `-Variant copilot` or `-Variant codex`.
 
 3. Open a **new** terminal window and run `magicopilot` or `magicodex`.
 
@@ -72,11 +72,11 @@ The installer first verifies the downloaded files against `SHA256SUMS.txt`, then
 
 | Option | Effect |
 | --- | --- |
-| `-Variant codex\|copilot\|standalone` | The version to install; shows a menu if omitted |
+| `-Variant codex\|copilot` | The version to install; shows a menu if omitted |
 | `-Version <x.y.z>` | A specific version; defaults to the latest (stable releases first) |
 | `-List` | Lists available releases and installed versions |
 | `-AddToPath` | Adds the command directory to your user PATH |
-| `-Uninstall -Variant <variant>` | Uninstalls |
+| `-Uninstall -Variant <variant>` | Uninstalls; this also works for the archived `standalone` |
 | `-InstallDir <dir>` | Install location; `%LOCALAPPDATA%\Magicodex` by default |
 | `-Source <dir>` | Installs from a downloaded zip and `SHA256SUMS.txt`, without going online |
 | `-Force` | Downloads and reinstalls a version that is already installed |
@@ -200,7 +200,7 @@ Only Windows for now.
 
 ## License and notices
 
-- Magicodex (magicopilot, the installer and the standalone frontend) is released under the [MIT](LICENSE) license.
+- Magicodex (magicopilot and the installer) is released under the [MIT](LICENSE) license.
 - The Codex patch is based on OpenAI Codex and provided under the Apache License 2.0; see [NOTICE](NOTICE).
 - The Copilot version's release package includes Microsoft's official `conpty.dll` and `OpenConsole.exe` (MIT, unmodified).
 - This is an unofficial project and not a product of OpenAI or GitHub. magicopilot does not include, modify or redistribute GitHub Copilot CLI; it starts the copy you installed yourself.
@@ -239,9 +239,10 @@ Building from source, the patch structure, testing and the full verification rec
 | --- | --- | --- | --- |
 | GitHub Copilot CLI | **copilot**（预发布） | `magicopilot` | 运行你已安装的原版 Copilot CLI，在它上方画法阵 |
 | OpenAI Codex CLI | **codex**（正式版） | `magicodex` | 基于 Codex 0.153.4 源码打补丁后重新构建，界面就是原版 Codex |
-| 想要完全自绘的界面 | standalone（最早的版本） | `magicodex-standalone` | 独立前端，通过 Codex app-server 对话，只有一种法阵 |
 
 为什么 Copilot 版不是补丁？Copilot CLI 的许可证不允许修改，所以 magicopilot 是一个“外壳”：它启动你自己安装的、未修改的 Copilot CLI，在上方加一块法阵区域。
+
+最早的独立前端（standalone，自绘界面）已归档，不再维护，代码保存在 [`archive/standalone`](https://github.com/dengyanbo/Magicodex/tree/archive/standalone) 分支。
 
 ## 安装
 
@@ -250,7 +251,6 @@ Building from source, the patch structure, testing and the full verification rec
 - Windows 10/11 x64，推荐使用 [Windows Terminal](https://aka.ms/terminal)。
 - copilot 版：已安装并登录 GitHub Copilot CLI（`npm install -g @github/copilot`，已在 1.0.87 上验证）。
 - codex 版：Codex 账号（ChatGPT 账号或 API key）；不需要另外安装官方 Codex。
-- standalone 版：已安装并配置 Codex CLI；`magicodex-standalone --demo` 可以离线演示。
 - 仓库目前是私有的，下载需要已登录的 [GitHub CLI](https://cli.github.com/)（`gh auth login`）。
 
 **安装步骤**
@@ -267,7 +267,7 @@ Building from source, the patch structure, testing and the full verification rec
    powershell -ExecutionPolicy Bypass -File .\install.ps1 -AddToPath
    ```
 
-   也可以直接指定版本：`-Variant copilot`、`-Variant codex` 或 `-Variant standalone`。
+   也可以直接指定版本：`-Variant copilot` 或 `-Variant codex`。
 
 3. 打开一个**新的**终端窗口，运行 `magicopilot` 或 `magicodex`。
 
@@ -278,11 +278,11 @@ Building from source, the patch structure, testing and the full verification rec
 
 | 参数 | 作用 |
 | --- | --- |
-| `-Variant codex\|copilot\|standalone` | 要安装的版本；不写则显示菜单 |
+| `-Variant codex\|copilot` | 要安装的版本；不写则显示菜单 |
 | `-Version <x.y.z>` | 指定版本号；默认最新（优先正式版） |
 | `-List` | 列出可安装的发布与已安装的版本 |
 | `-AddToPath` | 把命令目录加入用户 PATH |
-| `-Uninstall -Variant <类型>` | 卸载 |
+| `-Uninstall -Variant <类型>` | 卸载；已归档的 `standalone` 也可以这样卸载 |
 | `-InstallDir <目录>` | 安装位置，默认 `%LOCALAPPDATA%\Magicodex` |
 | `-Source <目录>` | 从已下载的 zip 和 `SHA256SUMS.txt` 安装，不联网 |
 | `-Force` | 重新下载并安装已安装的版本 |
@@ -406,7 +406,7 @@ Copilot 版在窗口低于 19 行时隐藏法阵；这时 `/magic list` 只显�
 
 ## 许可与声明
 
-- Magicodex（magicopilot、安装脚本、独立前端）以 [MIT](LICENSE) 许可发布。
+- Magicodex（magicopilot 与安装脚本）以 [MIT](LICENSE) 许可发布。
 - Codex 补丁基于 OpenAI Codex，以 Apache License 2.0 提供，详见 [NOTICE](NOTICE)。
 - Copilot 版的发布包附带微软官方的 `conpty.dll` 和 `OpenConsole.exe`（MIT，未修改）。
 - 本项目是非官方作品，不是 OpenAI 或 GitHub 的产品。magicopilot 不包含、不修改、不再分发 GitHub Copilot CLI，它启动的是你自己安装的副本。

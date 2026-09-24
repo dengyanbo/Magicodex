@@ -8,7 +8,8 @@ Each variant is its own GitHub release, so install.ps1 can offer them side by si
 
   codex       codex-v<version>       the native OpenAI Codex CLI 0.153.4 patch
   copilot     copilot-v<version>     magicopilot, the GitHub Copilot CLI wrapper
-  standalone  standalone-v<version>  the original standalone frontend
+
+The standalone frontend is archived (branch archive/standalone) and no longer released.
 
 Every release gets dist\<tag>\ with the package zip, SHA256SUMS.txt, install.ps1 and the
 release notes. Nothing is uploaded without -Publish, which also requires a clean, pushed HEAD
@@ -19,8 +20,8 @@ scripts\New-Release.ps1 -Variant copilot
 scripts\New-Release.ps1 -Publish
 #>
 param(
-    [ValidateSet('codex', 'copilot', 'standalone')]
-    [string[]]$Variant = @('codex', 'copilot', 'standalone'),
+    [ValidateSet('codex', 'copilot')]
+    [string[]]$Variant = @('codex', 'copilot'),
     [string]$OutDir,
     # The official @openai/codex-win32-x64 0.153.4 directory ...\vendor\x86_64-pc-windows-msvc.
     [string]$CodexPackage,
@@ -198,28 +199,6 @@ function New-CopilotPackage([string]$Stage, [string]$Version) {
     })
 }
 
-function New-StandalonePackage([string]$Stage, [string]$Version) {
-    $binary = Join-Path $project 'magicodex.exe'
-    $built = Join-Path $project 'target\release\magicodex.exe'
-    if ((Test-Path -LiteralPath $built) -and (Get-Sha256 $built) -ne (Get-Sha256 $binary)) {
-        throw 'magicodex.exe differs from target\release\magicodex.exe; run scripts\Build.ps1 -Task release.'
-    }
-    Copy-File $binary (Join-Path $Stage 'magicodex.exe')
-    Copy-File (Join-Path $project 'LICENSE') (Join-Path $Stage 'LICENSE')
-    Write-Text (Join-Path $Stage 'README.md') (Get-PackageReadme (Join-Path $project 'README-standalone.md'))
-    # The standalone frontend is built with the GNU toolchain (scripts\Build.ps1).
-    Write-Notices (Join-Path $project 'Cargo.toml') (Join-Path $Stage 'THIRD-PARTY-NOTICES.md') `
-        'Magicodex standalone third-party notices' 'x86_64-pc-windows-gnu' @()
-    Write-PackageManifest $Stage ([ordered]@{
-        name = 'magicodex-standalone'
-        variant = 'standalone'
-        version = $Version
-        description = 'The original standalone Magicodex frontend for Codex app-server'
-        requires = 'Codex CLI on PATH (codex, or codex-original with --backend official)'
-        commands = [ordered]@{ 'magicodex-standalone' = 'magicodex.exe' }
-    })
-}
-
 function Get-FileTable([string]$Stage) {
     $rows = foreach ($file in Get-ChildItem -LiteralPath $Stage -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll' } | Sort-Object FullName) {
         $relative = $file.FullName.Substring($Stage.Length + 1)
@@ -257,7 +236,6 @@ if ($dirty) {
 $versions = @{
     codex = $codexVersion
     copilot = Get-CargoVersion (Join-Path $project 'copilot\Cargo.toml')
-    standalone = Get-CargoVersion (Join-Path $project 'Cargo.toml')
 }
 $definitions = @{
     codex = @{
@@ -272,13 +250,6 @@ $definitions = @{
         Asset = "magicopilot-$($versions.copilot)-windows-x64.zip"
         Title = "magicopilot for GitHub Copilot CLI · v$($versions.copilot)"
         Prerelease = $true
-        Latest = $false
-    }
-    standalone = @{
-        Tag = "standalone-v$($versions.standalone)"
-        Asset = "magicodex-standalone-$($versions.standalone)-windows-x64.zip"
-        Title = "Magicodex standalone frontend · v$($versions.standalone)"
-        Prerelease = $false
         Latest = $false
     }
 }
@@ -341,23 +312,6 @@ $(Get-InstallSnippet "copilot-v$($versions.copilot)" 'copilot')
 
 __FILES__
 "@
-    standalone = @"
-Magicodex **独立前端** $($versions.standalone)（最早的版本，保留）。
-
-**适合**：想要一个完全自绘的魔法阵客户端的用户。它通过 Codex app-server 连接 Codex，界面（输入框、审批、日志视图）是 Magicodex 自己实现的，不是 Codex 原版界面；公开 reasoning、工具执行与中间回复都会显示在法阵中，F3 查看原文，F4 阅读正文。只有一种法阵样式。若想要原版 Codex 界面，请选择 ``codex`` 版本。
-
-## 安装
-
-$(Get-InstallSnippet "standalone-v$($versions.standalone)" 'standalone')
-
-安装后运行 ``magicodex-standalone --demo`` 离线演示；真实对话需要 PATH 中的 ``codex``（或 ``--backend official`` 时的 ``codex-original``），详见包内 README。
-
-## 要求
-
-- Windows 10/11 x64、Windows Terminal；已安装并配置 Codex CLI
-
-__FILES__
-"@
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -371,7 +325,6 @@ foreach ($name in $Variant) {
     switch ($name) {
         'codex' { New-CodexPackage $stage }
         'copilot' { New-CopilotPackage $stage $versions.copilot }
-        'standalone' { New-StandalonePackage $stage $versions.standalone }
     }
     $zip = Join-Path $releaseDir $definition.Asset
     Add-Type -AssemblyName System.IO.Compression.FileSystem

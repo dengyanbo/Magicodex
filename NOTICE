@@ -1,7 +1,7 @@
 Magicodex
 
-The standalone frontend and project-specific launch/build tooling are
-licensed under the MIT license in LICENSE.
+Project-specific launch, build and install tooling is licensed under the
+MIT license in LICENSE.
 
 This repository also contains OpenAI Codex source under
 upstream/codex-rust-v0.153.4. That source retains its original licenses and
