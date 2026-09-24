@@ -50,13 +50,19 @@ The earliest version, a standalone frontend with its own interface, has been arc
 
 **Steps**
 
-1. Download the installer, in PowerShell:
+1. Download the installer. In PowerShell (no GitHub account needed):
 
    ```powershell
    Invoke-WebRequest -UseBasicParsing https://github.com/dengyanbo/Magicodex/releases/latest/download/install.ps1 -OutFile install.ps1
    ```
 
-   Or save `install.ps1` from the [Releases](https://github.com/dengyanbo/Magicodex/releases) page with your browser, and run step 2 in the folder you saved it to.
+   Or, if you have GitHub CLI installed and signed in:
+
+   ```powershell
+   gh release download --repo dengyanbo/Magicodex --pattern install.ps1 --clobber
+   ```
+
+   You can also save `install.ps1` from the [Releases](https://github.com/dengyanbo/Magicodex/releases) page with your browser, and run step 2 in the folder you saved it to.
 
 2. Run the installer and choose a version from the menu (`-AddToPath` adds the commands to PATH):
 
@@ -68,7 +74,7 @@ The earliest version, a standalone frontend with its own interface, has been arc
 
 3. Open a **new** terminal window and run `magicopilot` or `magicodex`. (If a new Windows Terminal tab still can't find the command, close Windows Terminal completely and reopen it.)
 
-The installer downloads from GitHub's public release pages (no GitHub account needed), verifies the files against `SHA256SUMS.txt`, then installs them to `%LOCALAPPDATA%\Magicodex`. Without `-AddToPath`, it leaves PATH alone. It runs on both Windows PowerShell 5.1 and PowerShell 7. You can also download a zip from the [Releases](https://github.com/dengyanbo/Magicodex/releases) page, extract it and run it directly.
+The installer downloads the release through GitHub CLI when it's installed and signed in, and from GitHub's public release pages otherwise, so no GitHub account is needed. It verifies the files against `SHA256SUMS.txt`, then installs them to `%LOCALAPPDATA%\Magicodex`. Without `-AddToPath`, it leaves PATH alone. It runs on both Windows PowerShell 5.1 and PowerShell 7. You can also download a zip from the [Releases](https://github.com/dengyanbo/Magicodex/releases) page, extract it and run it directly.
 
 <details>
 <summary>All installer options</summary>
@@ -275,10 +281,16 @@ Building from source, the patch structure, testing and the full verification rec
 
 **安装步骤**
 
-1. 在 PowerShell 中下载安装脚本：
+1. 下载安装脚本。在 PowerShell 中运行（不需要 GitHub 账号）：
 
    ```powershell
    Invoke-WebRequest -UseBasicParsing https://github.com/dengyanbo/Magicodex/releases/latest/download/install.ps1 -OutFile install.ps1
+   ```
+
+   或者，已安装并登录 GitHub CLI 的话：
+
+   ```powershell
+   gh release download --repo dengyanbo/Magicodex --pattern install.ps1 --clobber
    ```
 
    也可以用浏览器从 [Releases](https://github.com/dengyanbo/Magicodex/releases) 页面保存 `install.ps1`，再在保存它的文件夹里执行第 2 步。
@@ -293,7 +305,7 @@ Building from source, the patch structure, testing and the full verification rec
 
 3. 打开一个**新的**终端窗口，运行 `magicopilot` 或 `magicodex`。（如果 Windows Terminal 新开的标签页仍找不到命令，把 Windows Terminal 整个关掉再打开。）
 
-安装脚本从 GitHub 的公开发布页下载（不需要 GitHub 账号），先用 `SHA256SUMS.txt` 校验，再安装到 `%LOCALAPPDATA%\Magicodex`；不加 `-AddToPath` 就不会改动 PATH。Windows PowerShell 5.1 和 PowerShell 7 都可以运行。也可以在 [Releases](https://github.com/dengyanbo/Magicodex/releases) 页面下载 zip，解压后直接运行。
+安装脚本在已安装并登录 GitHub CLI 时通过它下载，否则从 GitHub 的公开发布页下载，所以不需要 GitHub 账号；下载后先用 `SHA256SUMS.txt` 校验，再安装到 `%LOCALAPPDATA%\Magicodex`；不加 `-AddToPath` 就不会改动 PATH。Windows PowerShell 5.1 和 PowerShell 7 都可以运行。也可以在 [Releases](https://github.com/dengyanbo/Magicodex/releases) 页面下载 zip，解压后直接运行。
 
 <details>
 <summary>安装脚本的全部参数</summary>

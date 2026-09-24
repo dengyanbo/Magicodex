@@ -224,13 +224,22 @@ function Get-FileTable([string]$Stage) {
 }
 
 function Get-InstallSnippet([string]$Tag, [string]$VariantName) {
+    $version = $Tag -replace '^[a-z]+-v', ''
     @"
+不需要 GitHub 账号，在 PowerShell 中运行：
+
 ``````powershell
 Invoke-WebRequest -UseBasicParsing https://github.com/$Repo/releases/download/$Tag/install.ps1 -OutFile install.ps1
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Variant $VariantName
 ``````
 
-``install.ps1`` 下载本发布的 zip（不需要 GitHub 账号），按 ``SHA256SUMS.txt`` 校验后安装到 ``%LOCALAPPDATA%\Magicodex``，命令入口在 ``%LOCALAPPDATA%\Magicodex\bin``（加 ``-AddToPath`` 才会写入用户 PATH）。不带参数运行可交互选择版本；``-List`` 列出所有发布，``-Uninstall -Variant $VariantName`` 卸载。也可以直接解压 zip 使用。
+已安装并登录 GitHub CLI 的话，第一行也可以换成：
+
+``````powershell
+gh release download $Tag --repo $Repo --pattern install.ps1
+``````
+
+``-Variant $VariantName`` 安装这一类型的最新发布，加 ``-Version $version`` 则安装这个版本。``install.ps1`` 按 ``SHA256SUMS.txt`` 校验后安装到 ``%LOCALAPPDATA%\Magicodex``，命令入口在 ``%LOCALAPPDATA%\Magicodex\bin``（加 ``-AddToPath`` 才会写入用户 PATH）。不带参数运行可交互选择版本；``-List`` 列出所有发布，``-Uninstall -Variant $VariantName`` 卸载。也可以直接解压 zip 使用。
 "@
 }
 
