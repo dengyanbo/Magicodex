@@ -13,7 +13,7 @@ Installs a Magicodex release: the Codex CLI patch or the Copilot CLI wrapper. Th
 .EXAMPLE
 .\install.ps1                                   # 交互式选择
 .\install.ps1 -Variant copilot                  # 安装最新的 copilot 版本
-.\install.ps1 -Variant codex -Version 0.6.0 -AddToPath   # 指定版本；-List 查看可用版本
+.\install.ps1 -Variant codex -Version <版本号> -AddToPath   # 指定版本；-List 查看可用版本
 .\install.ps1 -List                             # 列出可安装与已安装的版本
 .\install.ps1 -Uninstall -Variant copilot
 .\install.ps1 -Variant copilot -Source .\downloads   # 从已下载的 zip + SHA256SUMS.txt 安装
