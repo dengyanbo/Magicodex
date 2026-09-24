@@ -18,3 +18,12 @@ __pycache__/
 /*.sqlite
 /*.sqlite-*
 /*.db
+# Conversation exports written to the working directory: standalone Ctrl+S, copilot --share
+/magicodex-[0-9]*.json
+/magicodex-demo-[0-9]*.txt
+/copilot-session-*.md
+/out/
+# Anchored to the root: the vendored upstream tree tracks its own .vscode/ and frames/
+/.vscode/
+/.idea/
+/*.code-workspace

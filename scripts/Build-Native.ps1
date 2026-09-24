@@ -21,8 +21,9 @@ if (-not $InsideVcEnv) {
         $env:RUSTUP_TOOLCHAIN = '1.95.0-x86_64-pc-windows-msvc'
         $installer = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer'
         $env:Path = "$installer;$cargo;$tools;$env:Path"
-        $vs = & (Join-Path $installer 'vswhere.exe') -latest -products '*' -property installationPath
-        if (-not $vs) { throw 'Visual Studio Build Tools were not found' }
+        # Other products built on the Visual Studio shell, such as SSMS, have no C++ tools.
+        $vs = & (Join-Path $installer 'vswhere.exe') -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if (-not $vs) { throw 'Visual Studio Build Tools with the C++ x64 tools were not found' }
         $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
         $shell = Join-Path $PSHOME 'pwsh.exe'
         if (-not (Test-Path -LiteralPath $shell)) { throw 'Run native builds from PowerShell 7' }
@@ -46,7 +47,10 @@ $config = @(
     '--config', 'source.crates-io.replace-with="official-github"',
     '--config', 'source.official-github.registry="sparse+https://raw.githubusercontent.com/rust-lang/crates.io-index/master/"',
     '--config', 'http.multiplexing=false',
-    '--config', 'http.timeout=45'
+    '--config', 'http.timeout=45',
+    # Keeps the local user name out of the binary's panic messages. RUSTFLAGS would instead replace
+    # the stack size and static CRT flags in codex-rs\.cargo\config.toml; this adds to them.
+    '--config', "target.x86_64-pc-windows-msvc.rustflags=['--remap-path-prefix=$env:USERPROFILE=~']"
 )
 Set-Location (Join-Path $source 'codex-rs')
 if ($Action -in @('Build', 'Test', 'Fix')) {

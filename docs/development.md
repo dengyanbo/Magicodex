@@ -20,7 +20,7 @@
 
 ## Git 仓库范围
 
-仓库包含项目源码（根目录独立前端、`copilot\` 外壳）、修改后的上游源码、补丁、打包与构建脚本，保留上游许可证与声明；不提交 EXE、依赖缓存、源码 ZIP、用户配置或数据库。克隆后需按下文构建，Git 仓库本身不包含本地已生成的二进制。许可证范围见 `LICENSE` 和 `NOTICE`。
+仓库包含项目源码（根目录独立前端、`copilot\` 外壳）、修改后的上游源码、补丁、打包与构建脚本，保留上游许可证与声明；不提交 EXE、依赖缓存、源码 ZIP、用户配置、数据库或对话导出。克隆后需按下文构建，Git 仓库本身不包含本地已生成的二进制。许可证范围见 `LICENSE` 和 `NOTICE`。
 
 ## 发布
 
@@ -36,6 +36,7 @@ pwsh -File scripts\New-Release.ps1 -Publish           # 生成并创建 GitHub R
 - codex 版本为 Latest；copilot 版本是预发布，不标为 Latest。
 - 版本号：codex 版本写在 `New-Release.ps1` 的 `$codexVersion`（对应补丁系列），copilot 与 standalone 取各自 `Cargo.toml`。
 - 每个包带有 `magicodex-package.json`（版本类型、版本号、源码提交、命令列表），安装器据此创建命令入口，并以此识别自己安装的目录。
+- 构建脚本用 `--remap-path-prefix` 把用户目录映射为 `~`，发布的二进制不含本机用户名（依赖与标准库源码路径会写进 panic 信息）。该参数通过 cargo `--config` 追加到 rustflags；不要改用 `RUSTFLAGS` 环境变量，它会覆盖 `codex-rs\.cargo\config.toml` 中的 8 MiB 栈与静态 CRT 设置。
 
 包内容：
 
