@@ -218,14 +218,30 @@ class NativeTerminal:
         raise AssertionError(f"Local command did not complete: {command}\n{self.text()}")
 
     def extent(self):
+        """Size of the circle's braille, read by column within its footprint (centre 59 ± 23 of
+        120 columns): the pillars and particles beside it are not part of the circle."""
         self.settle()
         with self.lock:
-            dots = [(x, y) for y, line in enumerate(self.display_rows())
-                    for x, char in enumerate(line) if 28 <= x <= 92 and "\u2801" <= char <= "\u28ff"]
+            dots = [(x, y) for y in range(self.screen.lines) for x in range(36, 83)
+                    if "\u2801" <= (self.screen.buffer[y][x].data or " ") <= "\u28ff"]
         if not dots:
             return (0, 0)
         xs, ys = zip(*dots)
         return max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+
+    def band(self, start, end):
+        """Text of columns [start, end) on every row, wide characters counted once."""
+        self.settle()
+        with self.lock:
+            rows = []
+            for y in range(self.screen.lines):
+                line, x = [], start
+                while x < end:
+                    text = self.screen.buffer[y][x].data or " "
+                    line.append(text)
+                    x += max(1, wcswidth(text))
+                rows.append("".join(line))
+            return "\n".join(rows)
 
     def wait_extent(self, predicate, timeout=5):
         deadline = time.monotonic() + timeout
@@ -346,6 +362,11 @@ trust_level = "trusted"
                 later = terminal.extent()
                 assert later[0] > early[0] >= idle[0], (idle, early, later)
                 assert later[1] > idle[1], (idle, early, later)
+                # Beside the circle's footprint (centre 59 ± 23): the fixture calls no tools.
+                left, right = terminal.band(0, 35), terminal.band(84, 120)
+                assert "咏唱记录" in left and "静候咒文" in left, "grimoire page:\n" + left
+                assert all(s in right for s in ("施法状态", "T+", "/\\_/\\")), "status page and familiar:\n" + right
+                assert all(any("\u2801" <= c <= "\u28ff" for c in side) for side in (left, right)), "pillars and particles"
                 assert Fixture.first_text.wait(8), "No assistant reply"
                 terminal.wait("POUR_FIRST_青蓝星环")
                 outlet_above(terminal.text().splitlines(), "POUR_FIRST_青蓝星环")
@@ -365,6 +386,8 @@ trust_level = "trusted"
                 completed = terminal.text().splitlines()
                 answer_row, _ = outlet_above(completed, "POUR_FIRST_青蓝星环")
                 assert sum("POUR_FIRST_青蓝星环" in line for line in completed) == 1, "Provisional answer was duplicated"
+                assert not any(word in line for line in completed for word in ("咏唱记录", "施法状态")), \
+                    "The outlet kept in the history has no sides"
                 assert not any("\u2801" <= char <= "\u28ff"
                                for line in completed[answer_row + 1:] for char in line[28:93]), "A new circle appeared below the answer"
                 terminal.submit("/magic off")
@@ -394,7 +417,7 @@ trust_level = "trusted"
                                   "model_requests": 3, "default_instructions_unchanged": True,
                                   "style_picker_preview_cancel_select": True, "styled_outlet": "fire",
                                   "partial_and_complete_reply_below_outlet": True,
-                                  "stream_toggle_and_resize": True}))
+                                  "stream_toggle_and_resize": True, "sides": True}))
             finally:
                 Fixture.release_final.set()
                 terminal.close()

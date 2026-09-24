@@ -35,8 +35,8 @@ $project = Split-Path $PSScriptRoot -Parent
 if (-not $OutDir) { $OutDir = Join-Path $project 'dist' }
 $installer = Join-Path $project 'install.ps1'
 
-# The Codex release follows the native-patch series (native-patch\0001-0005).
-$codexVersion = '0.5.0'
+# The Codex release follows the native-patch series (native-patch\0001-0006).
+$codexVersion = '0.6.0'
 $codexUpstream = '0.153.4'
 
 function Get-CargoVersion([string]$Manifest) {
@@ -68,6 +68,20 @@ function Assert-Signature([string]$Path, [string]$Publisher) {
 
 function Get-Sha256([string]$Path) {
     (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
+# Source paths reach a binary through panic locations and C __FILE__ assertions; the build scripts
+# remap and trim them, and this refuses a binary in which the local user directory survived.
+function Assert-NoProfilePath([string]$Path) {
+    $text = [Text.Encoding]::Latin1.GetString([IO.File]::ReadAllBytes($Path))
+    $userDir = $env:USERPROFILE.TrimEnd('\')
+    foreach ($form in $userDir, $userDir.Replace('\', '/'), $userDir.Replace('\', '\\')) {
+        foreach ($needle in $form, [Text.Encoding]::Latin1.GetString([Text.Encoding]::Unicode.GetBytes($form))) {
+            if ($text.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                throw "$Path contains the local user directory ($form). Rebuild with scripts\Build-*.ps1; for codex.exe built on an older target, first run cargo clean --release -p aws-lc-sys -p lzma-sys -p tree-sitter."
+            }
+        }
+    }
 }
 
 # Package READMEs travel without the repository's images.
@@ -130,6 +144,7 @@ function New-CodexPackage([string]$Stage) {
     $vendor = Resolve-CodexVendor
     Copy-File (Join-Path $vendor 'codex-package.json') (Join-Path $Stage 'codex-package.json')
     Copy-File $binary (Join-Path $Stage 'bin\codex.exe')
+    Assert-NoProfilePath (Join-Path $Stage 'bin\codex.exe')
     foreach ($relative in 'bin\codex-code-mode-host.exe', 'codex-resources\codex-command-runner.exe', 'codex-resources\codex-windows-sandbox-setup.exe') {
         $source = Join-Path $vendor $relative
         Assert-Signature $source 'OpenAI'
@@ -178,6 +193,7 @@ function New-CopilotPackage([string]$Stage, [string]$Version) {
     }
     $release = Join-Path $project 'copilot\target\release'
     Copy-File (Join-Path $release 'magicopilot.exe') (Join-Path $Stage 'magicopilot.exe')
+    Assert-NoProfilePath (Join-Path $Stage 'magicopilot.exe')
     foreach ($name in 'conpty.dll', 'OpenConsole.exe') {
         $source = Join-Path $release $name
         Assert-Signature $source 'Microsoft Corporation'
@@ -262,6 +278,7 @@ OpenAI Codex CLI **$codexUpstream** + Magicodex 原生魔法阵补丁（非官�
 
 - 10 种法阵：classic 经典、wind 风、fire 火、water 水、thunder 雷、earth 土、holy 神圣、dark 黑暗、eerie 诡异、tech 科技，外形、运动和文字路径各不相同；``/magic list`` 实时预览选择。
 - 输入前是小法阵，提交后随等待逐层变大变复杂；prompt 环绕外圈、中间回复环绕内圈（不含 reasoning）；最终回复从法阵下方吐出。
+- 蓄力时法阵两侧是一本魔导书：左页“咏唱记录”把命令执行、文件修改、MCP、网页搜索与子代理写成法术，右页“施法状态”显示咏唱时长、施法阶段与计数；两根与法阵同款的法阵柱随层数点亮，符文粒子向阵心汇聚，小猫使魔跟着吟唱和跑腿。终端 65 列起显示法阵柱与粒子，89 列起显示两页，109 列起显示参数与使魔。
 
 ## 安装
 
@@ -276,11 +293,11 @@ $(Get-InstallSnippet "codex-v$($versions.codex)" 'codex')
 
 ## 包内容
 
-``bin\codex.exe`` 由 ``rust-v$codexUpstream`` 源码应用 ``patches\0001``–``0005`` 构建；``codex-code-mode-host.exe``、``codex-resources\``、``codex-path\rg.exe`` 与 ``codex-package.json`` 是官方 ``@openai/codex-win32-x64`` $codexUpstream 原文件（OpenAI 签名，未修改），目录布局与官方包相同。许可：Apache-2.0（``LICENSE``、``NOTICE``、``MAGICODEX-NOTICE.md``）。
+``bin\codex.exe`` 由 ``rust-v$codexUpstream`` 源码应用 ``patches\0001``–``0006`` 构建；``codex-code-mode-host.exe``、``codex-resources\``、``codex-path\rg.exe`` 与 ``codex-package.json`` 是官方 ``@openai/codex-win32-x64`` $codexUpstream 原文件（OpenAI 签名，未修改），目录布局与官方包相同。许可：Apache-2.0（``LICENSE``、``NOTICE``、``MAGICODEX-NOTICE.md``）。
 
 ## 验证
 
-本地 fixture，未调用真实模型：原生 TUI 测试 4108 通过 / 10 跳过，魔法阵定向用例 41 项；ConPTY 端到端在通用与 Windows Terminal 两种滚动策略下通过（``/magic list`` 预览 / Esc 恢复 / Enter 选用、fire 出口、``/magic 雷``、默认 instructions 与开关无关）。本发布包按官方目录布局解压后再次运行了同一端到端验收。
+本地 fixture，未调用真实模型：原生 TUI 测试 4117 通过 / 10 跳过（``cargo test``），魔法阵定向用例 50 项；ConPTY 端到端在通用与 Windows Terminal 两种滚动策略下通过（``/magic list`` 预览 / Esc 恢复 / Enter 选用、fire 出口、``/magic 雷``、默认 instructions 与开关无关；蓄力时两侧显示咏唱记录、施法状态、使魔、法阵柱与粒子，定格的出口不带两侧）。``codex.exe`` 不含构建机的用户目录（打包时扫描）。本发布包按官方目录布局解压后再次运行了同一端到端验收。
 
 __FILES__
 "@

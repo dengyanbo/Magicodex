@@ -8,7 +8,7 @@
 | --- | --- |
 | `copilot\` | magicopilot：GitHub Copilot CLI 外壳（Rust） |
 | `upstream\codex-rust-v0.153.4\` | 与 Codex 发布标签对应的源码，已应用 Magicodex 补丁 |
-| `native-patch\` | 相对上游源码的补丁 0001–0005 与 `manifest.json` |
+| `native-patch\` | 相对上游源码的补丁 0001–0006 与 `manifest.json` |
 | `native\` | 本机构建并发布的补丁版 `codex.exe`（不在 Git 中） |
 | `scripts\` | 构建、导出补丁、打包与发布脚本 |
 | `tests\` | 端到端验收与画面渲染脚本 |
@@ -36,6 +36,7 @@ pwsh -File scripts\New-Release.ps1 -Publish           # 生成并创建 GitHub R
 - 版本号：codex 版本写在 `New-Release.ps1` 的 `$codexVersion`（对应补丁系列），copilot 取 `copilot\Cargo.toml`。
 - 每个包带有 `magicodex-package.json`（版本类型、版本号、源码提交、命令列表），安装器据此创建命令入口，并以此识别自己安装的目录。
 - 构建脚本用 `--remap-path-prefix` 把用户目录映射为 `~`，发布的二进制不含本机用户名（依赖与标准库源码路径会写进 panic 信息）。该参数通过 cargo `--config` 追加到 rustflags；不要改用 `RUSTFLAGS` 环境变量，它会覆盖 `codex-rs\.cargo\config.toml` 中的 8 MiB 栈与静态 CRT 设置。
+- `--remap-path-prefix` 只作用于 rustc。Codex 依赖中的 C 代码（aws-lc、liblzma、tree-sitter）在断言里保留 `__FILE__`，`Build-Native.ps1` 另通过 `CL` 环境变量（cl.exe 自己读取）传入 `/d1trimfile:"<用户目录>\"`，去掉这些路径中的用户目录。不要改用 `CFLAGS`：设置了 `CFLAGS` 时 cc crate 不再加默认的警告级别，aws-lc 依赖警告的编译器探测会误判 `__builtin_bswap` 可用，链接时报 `LNK2001`。没有构建脚本跟踪 `CL`，已编译的 C 依赖不会因此自动重编；在旧的 `target` 上首次使用时先运行 `cargo clean --release -p aws-lc-sys -p lzma-sys -p tree-sitter`。`New-Release.ps1` 打包时扫描二进制（ASCII 与 UTF-16 两种编码），含用户目录即中止。
 
 包内容：
 
@@ -93,6 +94,7 @@ pwsh -File scripts\New-Release.ps1 -Publish           # 生成并创建 GitHub R
 | `native-patch\0003-downward-reply.patch` | 法阵上方定型、文字向下输出及流式预览 |
 | `native-patch\0004-visual-refresh.patch` | 法阵视觉重绘：分层六芒星、双文字带、流光与描线动画、光锥出口、流式高亮 |
 | `native-patch\0005-magic-styles.patch` | 10 种法阵类型、`/magic list` 预览选择弹窗与 `/magic <类型>` |
+| `native-patch\0006-magic-sides.patch` | 实时法阵两侧：魔导书两页、10 种法阵柱、符文粒子与使魔（与 magicopilot 的 `circle\sides\` 同源） |
 | `native-patch\manifest.json` | 上游版本、改动文件与受保护源码校验 |
 
 重新导出补丁需要原始源码 ZIP（不在 Git 中）：
@@ -107,7 +109,13 @@ Invoke-WebRequest 'https://codeload.github.com/openai/codex/zip/refs/tags/rust-v
 - `--keep-stage <补丁>`：原样保留该提交之后尚未提交的阶段，按顺序可重复；
 - `--stage-name`：接收其余改动的新阶段文件名。
 
-它同时核对原提示、输入与键位相关文件未被改动。0001–0005 目前都已提交（0005 于 5c43a18）。新的改动可以用 `--base-ref HEAD --stage-name 0006-<名称>.patch` 导出为下一个阶段。0005 当时是这样导出的：
+它同时核对原提示、输入与键位相关文件未被改动。0001–0006 都已提交。新阶段应以只含 0001、0002 的提交 `11cbcbc` 为基准，把已有的 0003 起各阶段按顺序作为 `--keep-stage` 保留，这样 manifest 才能把每个文件记到真正改动它的阶段；直接用 `--base-ref HEAD` 时补丁文件本身不受影响，但 0003 起各阶段改过的文件会被记到 0002 名下。0006 是这样导出的：
+
+```powershell
+python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.zip --base-ref 11cbcbc250297f8b50ea94ac6851b11170c4de9d --keep-stage .\native-patch\0003-downward-reply.patch --keep-stage .\native-patch\0004-visual-refresh.patch --keep-stage .\native-patch\0005-magic-styles.patch --stage-name 0006-magic-sides.patch
+```
+
+0005 当时是这样导出的：
 
 ```powershell
 python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.zip --base-ref 11cbcbc250297f8b50ea94ac6851b11170c4de9d --keep-stage .\native-patch\0003-downward-reply.patch --keep-stage .\native-patch\0004-visual-refresh.patch --stage-name 0005-magic-styles.patch
@@ -143,7 +151,8 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
 - 本地命令、图形增长、开关、默认指令一致性及原退出键；
 - `/magic list` 弹窗的预览、Esc 恢复与 Enter 选用，以及非 classic 类型的出口位置；
 - 向下吐字：暂停后续响应，先确认没有换行的首段已经出现在出口下方，再继续发送剩余正文；
-- 流中开关、缩放，以及最终正文没有重复。
+- 流中开关、缩放，以及最终正文没有重复；
+- 蓄力时法阵两侧的咏唱记录、施法状态、使魔、法阵柱与粒子（法阵大小只按中心 ±23 列统计，不把两侧算进去），以及定格的出口不带两侧内容。
 
 默认不设置 `WT_SESSION`，走 Codex 的通用滚动策略；加 `--windows-terminal` 则按 Windows Terminal 的策略运行。读屏前会等待输出静默，避免把半帧重绘误判为结果。
 
@@ -235,7 +244,40 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
 - 配色：`classic` 只用 Codex 的 magenta/cyan。其他类型是用户主动选择的主题，按元素使用红、黄、蓝、绿等 ANSI 16 色，不使用 RGB/256 色，实际色值由终端主题决定。这是对 Codex 样式指南的有意例外，只作用于 `/magic` 装饰，不影响原生界面。
 - 区别不只是颜色：测试把 10 种类型的待机、蓄力和出口画面去掉颜色后逐对比较，任意两种的已绘制单元格至少有 28%（待机）、37%（蓄力）、36%（出口）互不重合；最接近的分别是神圣/诡异、经典/神圣。待机小阵只有 9 列宽，中心单元格难免重合，所以这一项的数字最低。
 
+#### 法阵两侧
+
+- 蓄力时输入框上方的实时法阵两侧：左页“咏唱记录”、右页“施法状态”、紧挨法阵的两根法阵柱、空闲格子里的符文粒子与右下角的使魔。渲染代码由 `scripts\Port-CircleSides.py` 从 magicopilot 的 `copilot\src\circle\sides\` 生成：
+  - 替换模块路径，单元测试移到 `magic_sides_tests.rs`；
+  - Codex 没有的事件（技能、意图）标为 `allow(dead_code)`；
+  - 加上 `magic_sides::LiveView`，用它包住原来的 `MagicView`。
+
+  修改 magicopilot 的两侧后，运行该脚本和 `.\scripts\Build-Native.ps1 -Action FormatRust`，再导出补丁。
+- 法术来自 chatwidget 的 `ItemStarted`/`ItemCompleted` 通知：命令执行按其 `command_actions` 记为寻踪术（搜索）、洞察之眼（读取、列目录）或召唤仪式（其他命令），文件修改为符文刻印，MCP 调用为契约之力，网页搜索为千里眼，子代理为召唤使魔，动态工具按名称归类；每条完成的助手消息计一次神谕。回放的历史不计入。
+- 法阵默认关闭；关闭时两侧同样不画。定格到对话记录里的出口保持原样，不带两侧内容。宽度、高度门槛与 magicopilot 相同（65/89/109 列，区域至少 12 行）；`animations = false` 时两侧静止。失败的法术只用 `×` 与暗色表示，`classic` 仍只用 magenta/cyan。
+
 ### 验证记录
+
+**法阵两侧（0006）**
+
+- 完整原生 TUI 套件：4117 通过、10 跳过（比 0005 多 9 项）。本机没有 just/nextest，用 `cargo test -p codex-tui --release`（codex-tui opt-level=0、`RUST_MIN_STACK` 8 MiB，与 `just test` 相同）直接运行，因此没有 leaky 统计。
+- 在 Windows Terminal 里运行测试（设置了 `WT_SESSION`）时，`patch_approval_pager_top` 快照失败：补丁审批翻页器改用真彩色背景。去掉 `WT_SESSION` 后通过，与魔法阵无关；上面的数字是不带 `WT_SESSION` 的结果。
+- 魔法阵定向用例由 41 项增至 50 项，新增：
+  - 10 种类型的笔画都不越出法阵占用区（中心 ±23 列）；
+  - 宽度分级、两侧不压到法阵、魔导书与状态页的内容；
+  - `animations = false` 时两侧静止；
+  - 工具名称归类与参数摘要；
+  - chatwidget 集成：两条命令执行通知分别记为寻踪术（完成，参数 `magic_circle`）与召唤仪式（失败）。
+- 没有新增或改动快照，原有快照全部通过。
+- Clippy（`--tests -p codex-tui --release`）在 codex-tui 中无告警，`cargo fmt --check` 通过；release 构建仍只有未改动的 app-server 一处 `unused_mut`、cloud-tasks 两处未使用 import 警告。
+- ConPTY 验收在通用策略与 Windows Terminal 策略下均通过：
+  - 原有各项检查不变，法阵从待机 9×5 扩大到 25×13、35×17；
+  - 蓄力约 5 秒时，左侧有“咏唱记录 / 静候咒文”，右侧有“施法状态”、`T+` 与使魔，两侧都有法阵柱与粒子的点阵；
+  - 回复完成后，对话记录中定格的出口不带两侧内容。
+- 用真实程序按 Windows Terminal 策略渲染了 classic、fire、tech、eerie 的完整流程（120×40）并逐张审查：两侧只在蓄力时出现；classic 只用 magenta/cyan 与默认前景；中间回复计入神谕；出口定格后两侧消失。fixture 不调用工具，左页只有占位文字，法术条目由上面的单元测试覆盖。
+- 发现并修复：`--remap-path-prefix` 只作用于 rustc。首次构建的 `codex.exe` 中，aws-lc、liblzma、tree-sitter 断言里的 `__FILE__` 仍含本机用户目录（ASCII 83 处、UTF-16 75 处）。`Build-Native.ps1` 改为同时经 `CL` 环境变量传入 MSVC 的 `/d1trimfile:`，`New-Release.ps1` 打包时扫描二进制，发现用户目录即中止。最初试过用 `CFLAGS` 传入，结果 aws-lc 的编译器探测误判 `__builtin_bswap` 可用，链接失败（cc crate 在设置了 `CFLAGS` 时不加默认警告级别），因此改用 `CL`。重新构建后为 0 处（ASCII 与 UTF-16 编码均无本机用户名）。magicopilot 不含这类 C 代码，已发布的 0.1.1、0.2.0 均为 0 处。
+- 六阶段补丁：0001–0005 重新导出后逐字节不变，新增 0006（14 个文件）；950 个原提示、输入与键位相关文件保持不变。从原始 ZIP 依次重放六个阶段后，manifest 中 101 个文件及全部 1754 个 TUI 文件与源码逐字节一致。
+- `Publish-Native.ps1` 通过本机 `~/.codex/copilot-proxy` 桥接设置定位官方 `codex-code-mode-host.exe`，本机没有这份设置，因此按脚本的相同步骤手动发布：`codex-code-mode-host.exe` 取自官方 npm 包 `@openai/codex-win32-x64@0.153.4-win32-x64`（OpenAI 签名有效）。
+- 发布的 `native\codex.exe` SHA256 为 `7CE0821EF1DD265EE8EC6DE83429B70EFCB415BD4F0FA946BA64CFF5361900BD`，上述 ConPTY 验收在这个最终构建上重新运行过。本轮只用本地 fixture，没有调用真实模型。
 
 **多类型法阵（0005）**
 
@@ -333,6 +375,12 @@ uv run --no-project --with pyte --with pywinpty --with psutil --with wcwidth --w
   - `--windows-terminal` 模拟 Windows Terminal 环境；
   - `--baseline` 另外直接运行一次 Copilot，对比发给模型的请求；
   - `--frames <目录>` 保存各阶段画面。
+
+### 验证记录（0.2.1）
+
+- 本版改动：失败的法术只用 `×` 与暗色表示，不再用红色，classic 保持 magenta/cyan 两色；两侧的渲染代码与 Codex 补丁 0006 共用（Codex 版由 `scripts\Port-CircleSides.py` 从同一份源码生成，已核对生成结果与补丁逐字节一致）。
+- 端到端 `tests\copilot_terminal.py` 在 Copilot CLI 1.0.89-1 上通过：Windows Terminal 模式（含 `--baseline` 对比）与通用模式，检查项与 0.2.0 相同。通用模式第一次运行时 Codex 正在后台满载构建，Copilot 启动超过了启动提示的 3.5 秒显示时间，“Magic circle on”检查因此失败；CPU 空闲后重跑通过。
+- 49 项单元测试通过；Clippy（`-D warnings`）无告警；`magicopilot.exe` 中本机用户目录为 0 处（打包时扫描）。
 
 ### 验证记录（0.2.0）
 

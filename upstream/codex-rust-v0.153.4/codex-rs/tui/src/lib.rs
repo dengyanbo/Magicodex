@@ -154,6 +154,7 @@ mod magic_canvas;
 mod magic_circle;
 mod magic_output;
 mod magic_picker;
+mod magic_sides;
 mod magic_style;
 mod magic_styles;
 mod managed_new_thread_defaults;

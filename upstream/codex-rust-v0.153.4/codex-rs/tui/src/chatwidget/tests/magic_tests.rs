@@ -406,3 +406,29 @@ async fn magic_outlet_keeps_the_style_it_was_cast_with() {
     assert_eq!(chat.magic.style(), MagicStyle::Thunder);
     assert!(chat.magic.enabled());
 }
+
+#[tokio::test]
+async fn tool_calls_are_written_beside_the_charging_circle() {
+    use crate::magic_sides::spells::SpellKind;
+    use crate::magic_sides::spells::SpellState;
+
+    let (mut chat, _events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.dispatch_command_with_args(SlashCommand::Magic, "on".to_string(), Vec::new());
+    chat.on_task_started();
+    let search = begin_exec(&mut chat, "call-search", "rg magic_circle src");
+    let test = begin_exec(&mut chat, "call-test", "cargo test --quiet");
+    end_exec(&mut chat, search, "src/lib.rs", "", /*exit_code*/ 0);
+    end_exec(&mut chat, test, "", "boom", /*exit_code*/ 1);
+    let spells = &chat.magic_circle.chronicle.spells;
+    assert_eq!(spells.len(), 2);
+    assert_eq!(
+        (spells[0].kind, spells[0].state),
+        (SpellKind::Track, SpellState::Done)
+    );
+    assert_eq!(spells[0].detail, "magic_circle");
+    assert_eq!(
+        (spells[1].kind, spells[1].state),
+        (SpellKind::Ritual, SpellState::Failed)
+    );
+    assert_eq!(spells[1].detail, "cargo test --quiet");
+}

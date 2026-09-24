@@ -40,6 +40,11 @@ $Filter = $env:MAGICODEX_NATIVE_FILTER
 $env:CARGO_PROFILE_RELEASE_DEBUG = '0'
 $env:CARGO_PROFILE_RELEASE_STRIP = 'symbols'
 $env:CARGO_BUILD_JOBS = '4'
+# --remap-path-prefix only reaches rustc. The C in aws-lc, liblzma and tree-sitter keeps __FILE__ in
+# its assertions, so cl.exe trims the user directory from those paths too. The option goes through
+# CL, which cl.exe reads itself: with CFLAGS set, the cc crate drops its default warning level, and
+# aws-lc's compiler checks then take __builtin_bswap for supported and the link fails.
+$env:CL = "$env:CL `"/d1trimfile:$env:USERPROFILE\\`"".Trim()
 $cmake = Join-Path $env:VSINSTALLDIR 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin'
 $ninja = Join-Path $env:VSINSTALLDIR 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja'
 if (Test-Path -LiteralPath $cmake) { $env:Path = "$cmake;$ninja;$env:Path" }

@@ -1,0 +1,2098 @@
+--- a/codex-rs/tui/src/chatwidget/magic.rs
++++ b/codex-rs/tui/src/chatwidget/magic.rs
+@@ -1,7 +1,16 @@
+ //! Local slash-command control for the presentation-only magic circle.
+ 
+ use super::*;
++use crate::magic_sides::spells;
+ use crate::magic_style::MagicStyle;
++use codex_app_server_protocol::CollabAgentTool;
++use codex_app_server_protocol::CollabAgentToolCallStatus;
++use codex_app_server_protocol::CommandAction;
++use codex_app_server_protocol::CommandExecutionStatus;
++use codex_app_server_protocol::DynamicToolCallStatus;
++use codex_app_server_protocol::McpToolCallStatus;
++use codex_app_server_protocol::PatchApplyStatus;
++use codex_app_server_protocol::ThreadItem;
+ 
+ impl ChatWidget {
+     pub(super) fn handle_magic_command(&mut self, args: &str) {
+@@ -67,4 +76,120 @@
+             self.transcript.needs_final_message_separator = false;
+         }
+     }
++
++    /// Writes a started tool call into the grimoire beside the live circle.
++    pub(super) fn record_magic_item_started(&mut self, item: &ThreadItem) {
++        if !self.magic_circle.is_active() {
++            return;
++        }
++        let chronicle = &mut self.magic_circle.chronicle;
++        match item {
++            ThreadItem::CommandExecution {
++                id,
++                command,
++                command_actions,
++                ..
++            } => {
++                let (tool, detail) = match command_actions.first() {
++                    Some(CommandAction::Read { name, .. }) => ("read", name.clone()),
++                    Some(CommandAction::Search { query, command, .. }) => (
++                        "search",
++                        query.clone().unwrap_or_else(|| spells::first_line(command)),
++                    ),
++                    Some(CommandAction::ListFiles { path, command }) => (
++                        "list",
++                        path.clone().unwrap_or_else(|| spells::first_line(command)),
++                    ),
++                    Some(CommandAction::Unknown { command }) => {
++                        ("shell", spells::first_line(command))
++                    }
++                    None => ("shell", spells::first_line(command)),
++                };
++                chronicle.cast(id, tool, &detail, /*mcp*/ false, /*nested*/ false);
++            }
++            ThreadItem::FileChange { id, changes, .. } => {
++                let detail = changes
++                    .first()
++                    .map(|change| spells::file_name(&change.path))
++                    .unwrap_or_default();
++                chronicle.cast(
++                    id,
++                    "apply_patch",
++                    &detail,
++                    /*mcp*/ false,
++                    /*nested*/ false,
++                );
++            }
++            ThreadItem::McpToolCall { id, tool, .. } => {
++                chronicle.cast(id, tool, tool, /*mcp*/ true, /*nested*/ false);
++            }
++            ThreadItem::DynamicToolCall {
++                id,
++                tool,
++                arguments,
++                ..
++            } => {
++                let detail = spells::detail(tool, /*mcp*/ false, Some(arguments));
++                chronicle.cast(id, tool, &detail, /*mcp*/ false, /*nested*/ false);
++            }
++            ThreadItem::WebSearch(search) => {
++                chronicle.cast(
++                    &search.id,
++                    "web_search",
++                    &search.query,
++                    /*mcp*/ false,
++                    /*nested*/ false,
++                );
++            }
++            ThreadItem::ImageView { id, .. } => {
++                chronicle.cast(
++                    id,
++                    "view_image",
++                    "",
++                    /*mcp*/ false,
++                    /*nested*/ false,
++                );
++            }
++            ThreadItem::CollabAgentToolCall { id, tool, .. } => match tool {
++                CollabAgentTool::SpawnAgent
++                | CollabAgentTool::ResumeAgent
++                | CollabAgentTool::FollowupTask => chronicle.summon(id, ""),
++                _ => chronicle.cast(id, "agent", "", /*mcp*/ false, /*nested*/ false),
++            },
++            _ => {}
++        }
++    }
++
++    /// Marks a finished tool call; each finished assistant message counts as an oracle.
++    pub(super) fn record_magic_item_completed(&mut self, item: &ThreadItem) {
++        if !self.magic_circle.is_active() {
++            return;
++        }
++        let chronicle = &mut self.magic_circle.chronicle;
++        let (id, ok) = match item {
++            ThreadItem::AgentMessage { .. } => {
++                chronicle.oracle();
++                return;
++            }
++            ThreadItem::CommandExecution { id, status, .. } => {
++                (id, matches!(status, CommandExecutionStatus::Completed))
++            }
++            ThreadItem::FileChange { id, status, .. } => {
++                (id, matches!(status, PatchApplyStatus::Completed))
++            }
++            ThreadItem::McpToolCall { id, status, .. } => {
++                (id, matches!(status, McpToolCallStatus::Completed))
++            }
++            ThreadItem::DynamicToolCall { id, status, .. } => {
++                (id, matches!(status, DynamicToolCallStatus::Completed))
++            }
++            ThreadItem::CollabAgentToolCall { id, status, .. } => {
++                (id, matches!(status, CollabAgentToolCallStatus::Completed))
++            }
++            ThreadItem::WebSearch(search) => (&search.id, true),
++            ThreadItem::ImageView { id, .. } => (id, true),
++            _ => return,
++        };
++        chronicle.resolve(id, ok);
++    }
+ }
+--- a/codex-rs/tui/src/chatwidget/protocol.rs
++++ b/codex-rs/tui/src/chatwidget/protocol.rs
+@@ -354,6 +354,9 @@
+         notification: ItemStartedNotification,
+         from_replay: bool,
+     ) {
++        if !from_replay {
++            self.record_magic_item_started(&notification.item);
++        }
+         match notification.item {
+             ThreadItem::AgentMessage { phase, .. } if !from_replay => {
+                 self.magic_output.phase = phase;
+@@ -403,6 +406,9 @@
+         notification: ItemCompletedNotification,
+         replay_kind: Option<ReplayKind>,
+     ) {
++        if replay_kind.is_none() {
++            self.record_magic_item_completed(&notification.item);
++        }
+         match notification.item {
+             item @ ThreadItem::CommandExecution { .. } => self.on_command_execution_completed(item),
+             item => self.handle_thread_item(
+--- a/codex-rs/tui/src/chatwidget/rendering.rs
++++ b/codex-rs/tui/src/chatwidget/rendering.rs
+@@ -71,11 +71,10 @@
+         if self.magic.enabled() && !self.magic_output.emitted {
+             flex.push(
+                 /*flex*/ 1,
+-                RenderableItem::Owned(Box::new(crate::magic_circle::MagicView {
++                RenderableItem::Owned(Box::new(crate::magic_sides::LiveView {
+                     circle: &self.magic_circle,
+                     style: self.magic.style(),
+                     animations_enabled: self.config.animations,
+-                    scene: crate::magic_circle::MagicScene::Live,
+                 })),
+             );
+         }
+--- a/codex-rs/tui/src/chatwidget/tests/magic_tests.rs
++++ b/codex-rs/tui/src/chatwidget/tests/magic_tests.rs
+@@ -406,3 +406,29 @@
+     assert_eq!(chat.magic.style(), MagicStyle::Thunder);
+     assert!(chat.magic.enabled());
+ }
++
++#[tokio::test]
++async fn tool_calls_are_written_beside_the_charging_circle() {
++    use crate::magic_sides::spells::SpellKind;
++    use crate::magic_sides::spells::SpellState;
++
++    let (mut chat, _events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.dispatch_command_with_args(SlashCommand::Magic, "on".to_string(), Vec::new());
++    chat.on_task_started();
++    let search = begin_exec(&mut chat, "call-search", "rg magic_circle src");
++    let test = begin_exec(&mut chat, "call-test", "cargo test --quiet");
++    end_exec(&mut chat, search, "src/lib.rs", "", /*exit_code*/ 0);
++    end_exec(&mut chat, test, "", "boom", /*exit_code*/ 1);
++    let spells = &chat.magic_circle.chronicle.spells;
++    assert_eq!(spells.len(), 2);
++    assert_eq!(
++        (spells[0].kind, spells[0].state),
++        (SpellKind::Track, SpellState::Done)
++    );
++    assert_eq!(spells[0].detail, "magic_circle");
++    assert_eq!(
++        (spells[1].kind, spells[1].state),
++        (SpellKind::Ritual, SpellState::Failed)
++    );
++    assert_eq!(spells[1].detail, "cargo test --quiet");
++}
+--- a/codex-rs/tui/src/lib.rs
++++ b/codex-rs/tui/src/lib.rs
+@@ -154,6 +154,7 @@
+ mod magic_circle;
+ mod magic_output;
+ mod magic_picker;
++mod magic_sides;
+ mod magic_style;
+ mod magic_styles;
+ mod managed_new_thread_defaults;
+--- a/codex-rs/tui/src/magic_canvas.rs
++++ b/codex-rs/tui/src/magic_canvas.rs
+@@ -361,6 +361,16 @@
+         self.glyphs.push((left, row, glyph, end - start, style));
+     }
+ 
++    /// Keeps strokes out of `width` cells from `(left, row)`, where other content goes.
++    pub(crate) fn reserve(&mut self, (left, row): (usize, usize), width: usize) {
++        if row >= self.height || left >= self.width {
++            return;
++        }
++        let start = row * self.width + left;
++        let end = (start + width).min((row + 1) * self.width);
++        self.reserved[start..end].fill(true);
++    }
++
+     pub(crate) fn paint(self, area: Rect, buf: &mut Buffer, palette: &Palette) {
+         for (index, (mask, ink)) in self.dots.into_iter().enumerate() {
+             // Text replaces the strokes in its cells instead of inheriting their style.
+--- a/codex-rs/tui/src/magic_circle.rs
++++ b/codex-rs/tui/src/magic_circle.rs
+@@ -13,6 +13,7 @@
+ 
+ use crate::history_cell::sanitize_user_text;
+ use crate::magic_canvas::Canvas;
++use crate::magic_sides::spells::Chronicle;
+ use crate::magic_style::MagicStyle;
+ use crate::magic_styles;
+ use crate::magic_styles::Clock;
+@@ -25,7 +26,7 @@
+ /// Rows below an outlet circle for the emission that leads into the answer.
+ pub(crate) const OUTLET_ROWS: u16 = 3;
+ const IDLE_ROWS: u16 = 5;
+-const MAX_WIDTH: u16 = 99;
++pub(crate) const MAX_WIDTH: u16 = 99;
+ const TEXT_LIMIT: usize = 192;
+ const IDLE_RADIUS: f64 = 8.0;
+ const START_RADIUS: f64 = 20.0;
+@@ -40,6 +41,8 @@
+     /// Tail of the latest public assistant text.
+     reply: String,
+     reply_complete: bool,
++    /// What this turn has cast, for the pages beside the circle.
++    pub(crate) chronicle: Chronicle,
+ }
+ 
+ #[derive(Debug, PartialEq)]
+@@ -107,6 +110,17 @@
+ 
+     pub(crate) fn is_active(&self) -> bool {
+         self.started.is_some()
++    }
++
++    /// Time since the prompt, while a turn is active.
++    pub(crate) fn elapsed(&self, now: Instant) -> Option<Duration> {
++        self.started
++            .map(|started| now.saturating_duration_since(started))
++    }
++
++    /// Layers unlocked so far, which the side pages name as stages.
++    pub(crate) fn layers(&self, now: Instant) -> usize {
++        self.geometry(now).layers
+     }
+ 
+     fn geometry(&self, now: Instant) -> Geometry {
+@@ -129,7 +143,7 @@
+ }
+ 
+ /// Single-line printable text without control characters or bidi overrides.
+-fn display_text(text: &str) -> String {
++pub(crate) fn display_text(text: &str) -> String {
+     sanitize_user_text(text.into())
+         .replace(['\n', '\r', '\t'], " ")
+         .graphemes(/*is_extended*/ true)
+@@ -236,7 +250,7 @@
+     }
+ }
+ 
+-fn odd(size: u16) -> u16 {
++pub(crate) fn odd(size: u16) -> u16 {
+     if size.is_multiple_of(2) {
+         size.saturating_sub(1)
+     } else {
+--- /dev/null
++++ b/codex-rs/tui/src/magic_sides.rs
+@@ -0,0 +1,341 @@
++//! What the columns beside a charging circle show: a page of the grimoire on each side, a
++//! pillar next to the circle, rune particles in the free cells, and a familiar.
++//!
++//! Everything comes from what the circle already knows: the turn's clock, the layers it has
++//! unlocked, and the public tool, subagent and skill events. Nothing here reads reasoning.
++
++mod familiar;
++mod pages;
++mod particles;
++mod pillars;
++pub(crate) mod spells;
++
++use std::time::Duration;
++use std::time::Instant;
++
++use ratatui::buffer::Buffer;
++use ratatui::layout::Rect;
++use ratatui::style::Style;
++use unicode_width::UnicodeWidthChar;
++use unicode_width::UnicodeWidthStr;
++
++use crate::magic_circle::CIRCLE_ROWS;
++use crate::magic_circle::MAX_WIDTH;
++use crate::magic_circle::MagicCircle;
++use crate::magic_circle::MagicScene;
++use crate::magic_circle::MagicView;
++use crate::magic_circle::OUTLET_ROWS;
++use crate::magic_circle::odd;
++use crate::magic_style::MagicStyle;
++use crate::render::renderable::Renderable;
++
++/// Cells that any style may draw on either side of the circle's centre column, its outlet
++/// included. The tests measure every style against it.
++pub(crate) const FOOTPRINT: u16 = 23;
++/// Blank cells between the circle and what is beside it.
++const GAP: u16 = 1;
++const PILLAR_WIDTH: u16 = 3;
++/// Blank cells between a pillar and its page.
++const PAGE_GAP: u16 = 2;
++const PAGE_MAX: u16 = 34;
++/// Rows the sides need; a permission prompt shrinks the region below this.
++const MIN_ROWS: u16 = 12;
++/// Rows at the top kept for the region's notices.
++const NOTICE_ROWS: u16 = 2;
++
++/// How much a width allows, from the narrower side's columns.
++#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
++pub(crate) enum Tier {
++    /// Pillars and particles only.
++    Decor,
++    /// Pages with the essentials.
++    Compact,
++    /// Pages with details, and the familiar.
++    Full,
++}
++
++/// Where the sides go around a circle that `MagicView` draws in the same area.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(crate) struct Layout {
++    pub(crate) tier: Tier,
++    pub(crate) left: Rect,
++    pub(crate) right: Rect,
++    /// Rows `[top, bottom)` of the circle itself.
++    pub(crate) circle_rows: (u16, u16),
++}
++
++impl Layout {
++    pub(crate) fn of(area: Rect, outlet: bool) -> Option<Self> {
++        if area.height < MIN_ROWS {
++            return None;
++        }
++        let canvas = odd(area.width.min(MAX_WIDTH));
++        let center = area.x + (area.width - canvas) / 2 + canvas / 2;
++        let left_end = center.checked_sub(FOOTPRINT + GAP)?.max(area.x);
++        let right_start = (center + FOOTPRINT + GAP + 1).min(area.right());
++        let left = Rect::new(area.x, area.y, left_end - area.x, area.height);
++        let right = Rect::new(right_start, area.y, area.right() - right_start, area.height);
++        let tier = match left.width.min(right.width) {
++            0..8 => return None,
++            8..20 => Tier::Decor,
++            20..30 => Tier::Compact,
++            _ => Tier::Full,
++        };
++        let cone = if outlet { OUTLET_ROWS } else { 0 };
++        let rows = odd(area.height.saturating_sub(cone).min(CIRCLE_ROWS));
++        let top = area.y + (area.height - rows - cone) / 2;
++        Some(Self {
++            tier,
++            left,
++            right,
++            circle_rows: (top, top + rows),
++        })
++    }
++
++    /// A pillar next to each side of the circle.
++    fn pillars(&self) -> [Rect; 2] {
++        let (top, bottom) = self.circle_rows;
++        let height = (bottom - top).saturating_sub(4);
++        [
++            Rect::new(
++                self.left.right() - PILLAR_WIDTH,
++                top + 2,
++                PILLAR_WIDTH,
++                height,
++            ),
++            Rect::new(self.right.x, top + 2, PILLAR_WIDTH, height),
++        ]
++    }
++
++    /// A page between each pillar and the outer edge, below the notices.
++    fn pages(&self) -> [Rect; 2] {
++        let y = self.left.y + NOTICE_ROWS;
++        let height = self.left.height.saturating_sub(NOTICE_ROWS + 1);
++        let left_end = self.left.right().saturating_sub(PILLAR_WIDTH + PAGE_GAP);
++        let left_start = (self.left.x + 1).max(left_end.saturating_sub(PAGE_MAX));
++        let right_start = self.right.x + PILLAR_WIDTH + PAGE_GAP;
++        let right_end = self
++            .right
++            .right()
++            .saturating_sub(1)
++            .min(right_start + PAGE_MAX);
++        [
++            Rect::new(left_start, y, left_end.saturating_sub(left_start), height),
++            Rect::new(
++                right_start,
++                y,
++                right_end.saturating_sub(right_start),
++                height,
++            ),
++        ]
++    }
++}
++
++/// Motion shared by the side art; everything stands still without animations.
++#[derive(Clone, Copy, Debug)]
++pub(crate) struct Motion {
++    /// Seconds that drive motion; zero without animations.
++    pub(crate) spin: f64,
++    pub(crate) animated: bool,
++    /// Layers the circle has unlocked, 0 to 4.
++    pub(crate) layers: usize,
++    /// How far the outlet has run, 0 to 1, once the answer has arrived.
++    pub(crate) outlet: Option<f64>,
++}
++
++impl Motion {
++    /// Integer time step that changes `rate` times a second.
++    pub(crate) fn tick(&self, rate: f64) -> u64 {
++        (self.spin * rate) as u64
++    }
++
++    /// Fraction of a pillar that glows: a fifth per layer, all of it at the outlet.
++    pub(crate) fn lit(&self) -> f64 {
++        if self.outlet.is_some() {
++            1.0
++        } else {
++            (self.layers.min(4) + 1) as f64 / 5.0
++        }
++    }
++}
++
++/// A line of side text, already cut to its room.
++#[derive(Clone, Debug, PartialEq)]
++pub(crate) struct Run {
++    pub(crate) x: u16,
++    pub(crate) y: u16,
++    pub(crate) text: String,
++    pub(crate) style: Style,
++}
++
++impl Run {
++    /// `text` at `(x, y)`, cut to `width` cells with an ellipsis when it had to be cut.
++    pub(crate) fn fit(x: u16, y: u16, text: &str, width: u16, style: Style) -> Option<Self> {
++        let width = usize::from(width);
++        if width == 0 || text.is_empty() {
++            return None;
++        }
++        let text = if text.width() <= width {
++            text.to_string()
++        } else {
++            let mut cut = String::new();
++            let mut used = 0;
++            for c in text.chars() {
++                let size = c.width().unwrap_or(0);
++                if used + size + 1 > width {
++                    break;
++                }
++                cut.push(c);
++                used += size;
++            }
++            cut.push('…');
++            cut
++        };
++        Some(Self { x, y, text, style })
++    }
++
++    fn area(&self) -> Rect {
++        Rect::new(self.x, self.y, self.text.width() as u16, 1)
++    }
++
++    fn draw(&self, buf: &mut Buffer) {
++        let area = buf.area;
++        if !(area.y..area.bottom()).contains(&self.y) {
++            return;
++        }
++        let mut x = self.x;
++        for c in self.text.chars() {
++            let width = c.width().unwrap_or(0) as u16;
++            if width == 0 {
++                continue;
++            }
++            if x < area.x || x + width > area.right() {
++                break;
++            }
++            let mut glyph = [0; 4];
++            buf.set_stringn(
++                x,
++                self.y,
++                c.encode_utf8(&mut glyph),
++                usize::from(width),
++                self.style,
++            );
++            x += width;
++        }
++    }
++}
++
++/// `rect` widened by `cells` on both sides.
++fn widen(rect: Rect, cells: u16) -> Rect {
++    let x = rect.x.saturating_sub(cells);
++    Rect::new(x, rect.y, rect.width + (rect.x - x) + cells, rect.height)
++}
++
++/// The answer's arrival, while the outlet shows. The live circle in Codex never shows one;
++/// its outlet goes to the transcript without the sides.
++#[cfg_attr(not(test), allow(dead_code))]
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub(crate) struct Outlet {
++    /// Time from the prompt to the final answer.
++    pub(crate) took: Duration,
++    /// How far the outlet has run, 0 to 1.
++    pub(crate) progress: f64,
++}
++
++/// The sides of a charging or settled circle.
++pub(crate) struct SideView<'a> {
++    pub(crate) circle: &'a MagicCircle,
++    pub(crate) style: MagicStyle,
++    pub(crate) animations: bool,
++    pub(crate) outlet: Option<Outlet>,
++}
++
++impl SideView<'_> {
++    /// Draws beside the circle in `area`, the area its `MagicView` was drawn in.
++    pub(crate) fn render(&self, area: Rect, buf: &mut Buffer, now: Instant) {
++        let Some(elapsed) = self.circle.elapsed(now) else {
++            return;
++        };
++        let Some(layout) = Layout::of(area, self.outlet.is_some()) else {
++            return;
++        };
++        let palette = self.style.palette();
++        let motion = Motion {
++            spin: if self.animations {
++                elapsed.as_secs_f64()
++            } else {
++                0.0
++            },
++            animated: self.animations,
++            layers: self.circle.layers(now),
++            outlet: self.outlet.map(|outlet| outlet.progress),
++        };
++        let chronicle = &self.circle.chronicle;
++        let mut runs = Vec::new();
++        if layout.tier >= Tier::Compact {
++            let [left, right] = layout.pages();
++            pages::grimoire(&mut runs, left, chronicle, layout.tier, &palette, motion);
++            let status = pages::Status {
++                elapsed,
++                took: self.outlet.map(|outlet| outlet.took),
++                layers: motion.layers,
++            };
++            let used = pages::status(&mut runs, right, chronicle, &status, layout.tier, &palette);
++            if layout.tier == Tier::Full {
++                familiar::draw(&mut runs, right, used, chronicle, motion, &palette);
++            }
++        }
++        let pillars = layout.pillars();
++        let mut keep_out: Vec<Rect> = runs.iter().map(|run| widen(run.area(), 1)).collect();
++        keep_out.extend(pillars.iter().map(|pillar| widen(*pillar, 1)));
++        for (zone, inward) in [(layout.left, true), (layout.right, false)] {
++            particles::draw(buf, zone, inward, &keep_out, self.style, motion, &palette);
++        }
++        for pillar in pillars {
++            pillars::draw(buf, pillar, self.style, motion, &palette);
++        }
++        for run in &runs {
++            run.draw(buf);
++        }
++    }
++}
++
++/// The live circle above the composer, with its sides while a turn charges.
++pub(crate) struct LiveView<'a> {
++    pub(crate) circle: &'a MagicCircle,
++    pub(crate) style: MagicStyle,
++    pub(crate) animations_enabled: bool,
++}
++
++impl LiveView<'_> {
++    fn view(&self) -> MagicView<'_> {
++        MagicView {
++            circle: self.circle,
++            style: self.style,
++            animations_enabled: self.animations_enabled,
++            scene: MagicScene::Live,
++        }
++    }
++}
++
++impl Renderable for LiveView<'_> {
++    fn desired_height(&self, width: u16) -> u16 {
++        self.view().desired_height(width)
++    }
++
++    fn render(&self, area: Rect, buf: &mut Buffer) {
++        let now = Instant::now();
++        self.view().render_at(area, buf, now);
++        SideView {
++            circle: self.circle,
++            style: self.style,
++            animations: self.animations_enabled,
++            outlet: None,
++        }
++        .render(area, buf, now);
++    }
++}
++
++#[cfg(test)]
++#[path = "magic_sides_tests.rs"]
++mod tests;
+--- /dev/null
++++ b/codex-rs/tui/src/magic_sides/familiar.rs
+@@ -0,0 +1,107 @@
++//! The familiar at the foot of the right page, acting out what the turn is doing.
++
++use ratatui::layout::Rect;
++use unicode_width::UnicodeWidthStr;
++
++use super::Motion;
++use super::Run;
++use super::spells::Chronicle;
++use super::spells::SpellKind;
++use crate::magic_style::Palette;
++
++/// Cells of the body with its charm.
++const WIDTH: u16 = 9;
++/// Three rows of body and a caption.
++const ROWS: u16 = 4;
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(super) enum Mood {
++    /// Waiting for the model.
++    Chant,
++    /// A tool is running.
++    Run,
++    /// A subagent is running.
++    Summon,
++    /// The answer has arrived.
++    Cheer,
++}
++
++pub(super) fn mood(chronicle: &Chronicle, outlet: bool) -> Mood {
++    if outlet {
++        return Mood::Cheer;
++    }
++    match chronicle.casting() {
++        Some(spell) if spell.kind == SpellKind::Summon => Mood::Summon,
++        Some(_) => Mood::Run,
++        None => Mood::Chant,
++    }
++}
++
++/// The body, and a charm beside it at `(column, row)`.
++fn frame(mood: Mood, step: u64) -> ([&'static str; 3], (u16, u16), &'static str) {
++    let even = step.is_multiple_of(2);
++    let beside = if even { (8, 0) } else { (8, 2) };
++    match mood {
++        Mood::Chant => {
++            let eyes = if step % 6 == 5 { "( -.- )" } else { "( o.o )" };
++            let note = if even { "♪" } else { "♫" };
++            ([" /\\_/\\ ", eyes, " > ^ < "], (8, u16::from(even)), note)
++        }
++        Mood::Run => {
++            let legs = if even { " /   \\ " } else { " \\   / " };
++            (
++                [" /\\_/\\ ", "( °o° )", legs],
++                (7, 1),
++                if even { "≡" } else { "=" },
++            )
++        }
++        Mood::Summon => ([" /\\_/\\ ", "\\(o.o)/", " (   ) "], beside, "•"),
++        Mood::Cheer => {
++            let face = if even { "\\(^.^)/" } else { "\\(^o^)/" };
++            ([" /\\_/\\ ", face, "  ) (  "], beside, "☼")
++        }
++    }
++}
++
++fn caption(mood: Mood, chronicle: &Chronicle) -> String {
++    match mood {
++        Mood::Chant => "使魔 · 吟唱中".to_string(),
++        Mood::Run => {
++            let spell = chronicle.casting().map_or("", |spell| spell.kind.name());
++            format!("使魔 · 跑腿 {spell}")
++        }
++        Mood::Summon => "使魔 · 召唤同伴".to_string(),
++        Mood::Cheer => "使魔 · 欢呼！".to_string(),
++    }
++}
++
++/// Draws the familiar at the foot of `page`, when it fits below row `used`.
++pub(super) fn draw(
++    runs: &mut Vec<Run>,
++    page: Rect,
++    used: u16,
++    chronicle: &Chronicle,
++    motion: Motion,
++    palette: &Palette,
++) {
++    if page.width < WIDTH + 2 || page.bottom() < used + ROWS + 1 {
++        return;
++    }
++    let mood = mood(chronicle, motion.outlet.is_some());
++    let (body, (column, row), charm) = frame(mood, motion.tick(2.0));
++    let top = page.bottom() - ROWS;
++    let x = page.x + (page.width - WIDTH) / 2;
++    for (offset, line) in body.iter().enumerate() {
++        runs.extend(Run::fit(x, top + offset as u16, line, WIDTH, palette.line));
++    }
++    runs.extend(Run::fit(x + column, top + row, charm, 1, palette.accent));
++    let caption = caption(mood, chronicle);
++    let left = page.x + page.width.saturating_sub(caption.width() as u16) / 2;
++    runs.extend(Run::fit(
++        left,
++        top + 3,
++        &caption,
++        page.right() - left,
++        palette.faint,
++    ));
++}
+--- /dev/null
++++ b/codex-rs/tui/src/magic_sides/pages.rs
+@@ -0,0 +1,170 @@
++//! The two pages of the grimoire: this turn's spells on the left, the casting on the right.
++
++use std::time::Duration;
++
++use ratatui::layout::Rect;
++use ratatui::style::Style;
++
++use super::Motion;
++use super::Run;
++use super::Tier;
++use super::spells::Chronicle;
++use super::spells::SpellState;
++use crate::magic_style::Palette;
++
++/// Stages of the charge, one per unlocked layer.
++pub(super) const STAGES: [&str; 5] = ["描线", "蓄力", "共鸣", "聚灵", "满盈"];
++/// Cells a spell name takes, so the details line up.
++const NAME_WIDTH: u16 = 8;
++
++/// Appends `text` at `(x, y)`, cut to what is left of `page`.
++fn push(runs: &mut Vec<Run>, page: Rect, (x, y): (u16, u16), text: &str, style: Style) {
++    if y < page.bottom() {
++        runs.extend(Run::fit(x, y, text, page.right().saturating_sub(x), style));
++    }
++}
++
++/// Header and rule; returns the first row below them.
++fn heading(runs: &mut Vec<Run>, page: Rect, title: &str, palette: &Palette) -> u16 {
++    push(runs, page, (page.x, page.y), title, palette.bright);
++    let rule = "─".repeat(usize::from(page.width));
++    push(runs, page, (page.x, page.y + 1), &rule, palette.faint);
++    page.y + 2
++}
++
++/// The left page: the latest spells, the newest at the bottom.
++pub(super) fn grimoire(
++    runs: &mut Vec<Run>,
++    page: Rect,
++    chronicle: &Chronicle,
++    tier: Tier,
++    palette: &Palette,
++    motion: Motion,
++) {
++    if page.width < 8 || page.height < 3 {
++        return;
++    }
++    let first = heading(runs, page, "◊ 咏唱记录", palette);
++    let footer = u16::from(chronicle.helpers > 0);
++    let slots = usize::from(page.bottom().saturating_sub(first + footer));
++    if chronicle.spells.is_empty() {
++        push(runs, page, (page.x, first), "（静候咒文……）", palette.faint);
++    }
++    let skip = chronicle.spells.len().saturating_sub(slots);
++    for (row, spell) in (first..).zip(&chronicle.spells[skip..]) {
++        let (glyph, style) = match spell.state {
++            SpellState::Casting if motion.tick(3.0) % 2 == 1 => ("○", palette.glint),
++            SpellState::Casting => ("●", palette.glint),
++            SpellState::Done => ("√", palette.line),
++            // The classic style keeps to its two colours, so a failure shows by its mark.
++            SpellState::Failed => ("×", palette.faint),
++        };
++        push(runs, page, (page.x, row), glyph, style);
++        let name = if spell.state == SpellState::Casting {
++            palette.bright
++        } else {
++            palette.line
++        };
++        push(runs, page, (page.x + 2, row), spell.kind.name(), name);
++        if tier == Tier::Full && !spell.detail.is_empty() {
++            let x = page.x + 2 + NAME_WIDTH + 1;
++            push(runs, page, (x, row), &spell.detail, palette.faint);
++        }
++    }
++    if footer == 1 {
++        let text = format!("  使魔代施 {} 次", chronicle.helpers);
++        push(
++            runs,
++            page,
++            (page.x, page.bottom() - 1),
++            &text,
++            palette.faint,
++        );
++    }
++}
++
++/// What the right page reports besides the chronicle.
++pub(super) struct Status {
++    pub(super) elapsed: Duration,
++    /// Time to the final answer, while the outlet shows.
++    pub(super) took: Option<Duration>,
++    pub(super) layers: usize,
++}
++
++/// The right page: the clock, the stage, the counts and the intent. Returns the first row
++/// below what it wrote.
++pub(super) fn status(
++    runs: &mut Vec<Run>,
++    page: Rect,
++    chronicle: &Chronicle,
++    status: &Status,
++    tier: Tier,
++    palette: &Palette,
++) -> u16 {
++    if page.width < 8 || page.height < 3 {
++        return page.y;
++    }
++    let mut row = heading(runs, page, "◊ 施法状态", palette);
++    match status.took {
++        Some(took) => {
++            let text = format!("神谕降临 · 用时 {}", seconds(took));
++            push(runs, page, (page.x, row), &text, palette.glint);
++        }
++        None => {
++            push(runs, page, (page.x, row), "咏唱", palette.line);
++            let clock = format!("T+{}", seconds(status.elapsed));
++            push(runs, page, (page.x + 6, row), &clock, palette.bright);
++        }
++    }
++    row += 1;
++    let stage = status.layers.min(STAGES.len() - 1);
++    if tier == Tier::Full {
++        for (index, name) in STAGES.iter().enumerate() {
++            let style = if status.took.is_some() || index < stage {
++                palette.line
++            } else if index == stage {
++                palette.glint
++            } else {
++                palette.faint
++            };
++            push(runs, page, (page.x + 5 * index as u16, row), name, style);
++        }
++    } else {
++        let text = format!("阶段 · {}", STAGES[stage]);
++        push(runs, page, (page.x, row), &text, palette.line);
++    }
++    row += 1;
++    let counts = if tier == Tier::Full {
++        format!(
++            "法术 {} · 使魔 {} · 神谕 {}",
++            chronicle.cast, chronicle.summons, chronicle.oracles
++        )
++    } else {
++        format!("法术 {} · 神谕 {}", chronicle.cast, chronicle.oracles)
++    };
++    push(runs, page, (page.x, row), &counts, palette.line);
++    row += 1;
++    if tier == Tier::Full
++        && let Some(intent) = &chronicle.intent
++    {
++        push(
++            runs,
++            page,
++            (page.x, row),
++            &format!("意图 · {intent}"),
++            palette.faint,
++        );
++        row += 1;
++    }
++    row
++}
++
++fn seconds(duration: Duration) -> String {
++    let seconds = duration.as_secs_f64();
++    if seconds < 60.0 {
++        format!("{seconds:.1}s")
++    } else {
++        let whole = duration.as_secs();
++        format!("{}m{:02}s", whole / 60, whole % 60)
++    }
++}
+--- /dev/null
++++ b/codex-rs/tui/src/magic_sides/particles.rs
+@@ -0,0 +1,175 @@
++//! Rune particles drifting through the free cells beside the circle.
++
++use std::f64::consts::TAU;
++
++use ratatui::buffer::Buffer;
++use ratatui::layout::Rect;
++
++use super::Motion;
++use crate::magic_canvas::Canvas;
++use crate::magic_canvas::Ink;
++use crate::magic_canvas::noise;
++use crate::magic_style::MagicStyle;
++use crate::magic_style::Palette;
++
++/// One side's particles, in dots of that side.
++struct Flow {
++    style: MagicStyle,
++    seed: u64,
++    width: f64,
++    height: f64,
++    /// Whether the circle is to the right (the left side) rather than to the left.
++    inward: bool,
++    motion: Motion,
++}
++
++impl Flow {
++    /// Where particle `k` is now; it may emit a few dots, each with its ink.
++    fn particle(&self, k: u64, plot: &mut impl FnMut(f64, f64, Ink)) {
++        let r = |part: u64| noise(&[self.seed, k, part]);
++        let t = self.motion.spin;
++        let charge = 0.5 + 0.125 * self.motion.layers.min(4) as f64;
++        let (outer, inner) = if self.inward {
++            (0.0, self.width - 1.0)
++        } else {
++            (self.width - 1.0, 0.0)
++        };
++        let across = |f: f64| outer + (inner - outer) * f;
++        let drift = |speed: f64| (r(1) + t * speed * (0.6 + 0.8 * r(2)) * charge).fract();
++        let back = if self.inward { -1.0 } else { 1.0 };
++        let (width, height) = (self.width, self.height);
++        match self.style {
++            MagicStyle::Classic => {
++                let wobble = (t * 2.0 + r(5) * TAU).sin() * 1.5;
++                let ink = if r(9) < 0.15 { Ink::Glint } else { Ink::Faint };
++                plot(across(drift(0.18)), r(3) * height + wobble, ink);
++            }
++            MagicStyle::Wind => {
++                let x = across(drift(0.8));
++                let y = r(3) * height + (t * 1.5 + k as f64).sin() * 2.0;
++                plot(x, y, Ink::Line);
++                plot(x + back, y, Ink::Faint);
++                plot(x + 2.0 * back, y, Ink::Faint);
++            }
++            MagicStyle::Fire => {
++                let f = drift(0.25);
++                let ink = if r(4) < 0.35 { Ink::Accent } else { Ink::Line };
++                plot(across(r(3) * 0.7 + f * 0.3), height - 1.0 - f * height, ink);
++            }
++            MagicStyle::Water => {
++                let ink = if r(4) < 0.3 { Ink::Accent } else { Ink::Faint };
++                plot(across(r(3)), drift(0.3) * height, ink);
++            }
++            MagicStyle::Thunder => {
++                let tick = self.motion.tick(6.0);
++                if noise(&[self.seed, k, tick, 5]) < 0.45 {
++                    let x = noise(&[self.seed, k, tick, 6]) * width;
++                    let y = noise(&[self.seed, k, tick, 7]) * height;
++                    plot(x, y, Ink::Accent);
++                    plot(x + 1.0, y + 1.0, Ink::Line);
++                }
++            }
++            MagicStyle::Earth => {
++                let f = drift(0.08);
++                plot(
++                    across(r(3) * 0.8 + f * 0.2),
++                    (r(4) + f * 0.5).fract() * height,
++                    Ink::Faint,
++                );
++            }
++            MagicStyle::Holy => {
++                let f = drift(0.12);
++                let ink = if r(9) < 0.2 { Ink::Glint } else { Ink::Faint };
++                plot(across(r(3) * 0.6 + f * 0.4), height - 1.0 - f * height, ink);
++            }
++            MagicStyle::Dark => {
++                // Pulled in ever faster, toward the middle of the height.
++                let pull = drift(0.2).powi(2);
++                let start = r(3) * height;
++                let ink = if r(4) < 0.25 { Ink::Accent } else { Ink::Faint };
++                plot(
++                    across(pull),
++                    start + (height / 2.0 - start) * pull * 0.5,
++                    ink,
++                );
++            }
++            MagicStyle::Eerie => {
++                if noise(&[self.seed, k, self.motion.tick(1.5)]) < 0.4 {
++                    let ink = if r(5) < 0.3 { Ink::Accent } else { Ink::Faint };
++                    plot(r(3) * width, r(4) * height, ink);
++                }
++            }
++            MagicStyle::Tech => {
++                // Data runs along cell rows.
++                let x = across(drift(0.35));
++                let y = (r(3) * height / 4.0).floor() * 4.0 + 1.0;
++                plot(x, y, Ink::Line);
++                plot(x + 2.0 * back, y, Ink::Faint);
++            }
++        }
++    }
++}
++
++fn seed(style: MagicStyle, inward: bool) -> u64 {
++    let index = MagicStyle::ALL
++        .iter()
++        .position(|each| *each == style)
++        .unwrap_or(0);
++    (index as u64 + 1) * 0x9E37_79B9 + u64::from(inward)
++}
++
++/// Draws particles over `zone`, drifting toward the circle, outside `keep_out`. At the outlet
++/// they are drawn into the bottom corner next to it, where the answer pours out.
++pub(super) fn draw(
++    buf: &mut Buffer,
++    zone: Rect,
++    inward: bool,
++    keep_out: &[Rect],
++    style: MagicStyle,
++    motion: Motion,
++    palette: &Palette,
++) {
++    if zone.width == 0 || zone.height == 0 {
++        return;
++    }
++    let mut canvas = Canvas::new(zone.width, zone.height, 0.0);
++    for rect in keep_out {
++        let overlap = rect.intersection(zone);
++        for row in overlap.y..overlap.bottom() {
++            let cell = (usize::from(overlap.x - zone.x), usize::from(row - zone.y));
++            canvas.reserve(cell, usize::from(overlap.width));
++        }
++    }
++    let flow = Flow {
++        style,
++        seed: seed(style, inward),
++        width: f64::from(zone.width) * 2.0,
++        height: f64::from(zone.height) * 4.0,
++        inward,
++        motion,
++    };
++    let density = 0.025 + 0.007 * motion.layers.min(4) as f64;
++    let count = (f64::from(zone.width) * f64::from(zone.height) * density).round() as u64;
++    let converge = if motion.animated {
++        motion.outlet.unwrap_or(0.0)
++    } else {
++        0.0
++    };
++    let pull = (converge / 0.6).min(1.0).powi(2);
++    if pull >= 1.0 {
++        return;
++    }
++    let inner = if inward { flow.width - 1.0 } else { 0.0 };
++    let origin = f64::from(zone.width) - 0.5;
++    let mut plot = |x: f64, y: f64, ink: Ink| {
++        let x = x + (inner - x) * pull;
++        let y = y + (flow.height - 1.0 - y) * pull;
++        if (0.0..flow.width).contains(&x) && (0.0..flow.height).contains(&y) {
++            canvas.plot(x - origin, y, ink);
++        }
++    };
++    for k in 0..count {
++        flow.particle(k, &mut plot);
++    }
++    canvas.paint(zone, buf, palette);
++}
+--- /dev/null
++++ b/codex-rs/tui/src/magic_sides/pillars.rs
+@@ -0,0 +1,326 @@
++//! A pillar on each side of the circle, lighting up from its base as the circle gains layers.
++//!
++//! Pillars are six dots wide. Coordinates here are dots from the pillar's top left corner.
++
++use ratatui::buffer::Buffer;
++use ratatui::layout::Rect;
++
++use super::Motion;
++use crate::magic_canvas::Canvas;
++use crate::magic_canvas::Ink;
++use crate::magic_canvas::noise;
++use crate::magic_style::MagicStyle;
++use crate::magic_style::Palette;
++
++#[derive(Clone, Copy, PartialEq, Eq)]
++enum Part {
++    /// Structure: faint until lit.
++    Frame,
++    /// Inlays: brighter than the frame once lit.
++    Core,
++    /// The style's second colour, faint until lit.
++    Accent,
++    /// Sparks, only where lit.
++    Spark,
++    /// The second colour whatever the charge, e.g. flames.
++    Flame,
++}
++
++struct Pen<'c, 'a> {
++    canvas: &'c mut Canvas<'a>,
++    height: f64,
++    /// Dots from this row down are lit.
++    lit_from: f64,
++    /// A highlight rising through the lit part.
++    band: Option<f64>,
++    pulse: bool,
++}
++
++impl Pen<'_, '_> {
++    fn dot(&mut self, x: f64, y: f64, part: Part) {
++        let (x, y) = (x.round(), y.round());
++        if !(0.0..=5.0).contains(&x) || !(0.0..self.height).contains(&y) {
++            return;
++        }
++        let lit = y >= self.lit_from;
++        let hot = self.pulse || self.band.is_some_and(|band| (y - band).abs() < 2.0);
++        let ink = match part {
++            Part::Flame if hot => Ink::Glint,
++            Part::Flame => Ink::Accent,
++            Part::Spark if !lit => return,
++            _ if !lit => Ink::Faint,
++            Part::Frame if hot => Ink::Bright,
++            Part::Frame => Ink::Line,
++            Part::Core | Part::Accent if hot => Ink::Glint,
++            Part::Core => Ink::Bright,
++            Part::Accent => Ink::Accent,
++            Part::Spark => Ink::Glint,
++        };
++        self.canvas.plot(x - 2.5, y, ink);
++    }
++
++    fn column(&mut self, x: f64, from: f64, to: f64, part: Part) {
++        let mut y = from;
++        while y < to {
++            self.dot(x, y, part);
++            y += 1.0;
++        }
++    }
++
++    fn row(&mut self, y: f64, part: Part) {
++        for x in 0..6 {
++            self.dot(f64::from(x), y, part);
++        }
++    }
++}
++
++pub(super) fn draw(
++    buf: &mut Buffer,
++    area: Rect,
++    style: MagicStyle,
++    motion: Motion,
++    palette: &Palette,
++) {
++    if area.width < 3 || area.height < 4 {
++        return;
++    }
++    let mut canvas = Canvas::new(area.width, area.height, 0.0);
++    let height = f64::from(area.height) * 4.0;
++    let mut pen = Pen {
++        canvas: &mut canvas,
++        height,
++        lit_from: height * (1.0 - motion.lit()),
++        band: motion
++            .animated
++            .then(|| height - (motion.spin * 7.0) % (height + 8.0)),
++        pulse: motion
++            .outlet
++            .is_some_and(|progress| (progress * 14.0).sin() > 0.3),
++    };
++    match style {
++        MagicStyle::Classic => classic(&mut pen),
++        MagicStyle::Wind => helix(&mut pen, motion, 3.0),
++        MagicStyle::Fire => fire(&mut pen, motion),
++        MagicStyle::Water => water(&mut pen, motion),
++        MagicStyle::Thunder => thunder(&mut pen, motion),
++        MagicStyle::Earth => earth(&mut pen),
++        MagicStyle::Holy => holy(&mut pen, motion),
++        MagicStyle::Dark => tendrils(&mut pen, motion),
++        MagicStyle::Eerie => seam(&mut pen, motion),
++        MagicStyle::Tech => meter(&mut pen, motion),
++    }
++    canvas.paint(area, buf, palette);
++}
++
++/// An obelisk with a capstone and alternating runes.
++fn classic(pen: &mut Pen) {
++    let h = pen.height;
++    pen.dot(2.0, 0.0, Part::Core);
++    pen.dot(3.0, 0.0, Part::Core);
++    for (x, y) in [(1.0, 1.0), (4.0, 1.0), (0.0, 2.0), (5.0, 2.0)] {
++        pen.dot(x, y, Part::Frame);
++    }
++    pen.column(0.0, 3.0, h - 1.0, Part::Frame);
++    pen.column(5.0, 3.0, h - 1.0, Part::Frame);
++    pen.row(h - 1.0, Part::Frame);
++    let (mut y, mut rune) = (6.0, 0);
++    while y + 2.0 < h - 2.0 {
++        let (a, b) = if rune % 2 == 0 {
++            (2.0, 3.0)
++        } else {
++            (3.0, 2.0)
++        };
++        pen.dot(a, y, Part::Core);
++        pen.dot(b, y + 1.0, Part::Core);
++        pen.dot(a, y + 2.0, Part::Core);
++        y += 6.0;
++        rune += 1;
++    }
++}
++
++/// Two strands winding around each other, rising at `speed`.
++fn helix(pen: &mut Pen, motion: Motion, speed: f64) {
++    for y in 0..pen.height as u64 {
++        let y = y as f64;
++        let wave = (y * 0.45 - motion.spin * speed).sin() * 2.4;
++        pen.dot(2.5 + wave, y, Part::Frame);
++        pen.dot(2.5 - wave, y, Part::Core);
++    }
++}
++
++/// A brazier whose flames grow with the charge, and embers rising in its shaft.
++fn fire(pen: &mut Pen, motion: Motion) {
++    let h = pen.height;
++    let flame = 1.0 + 5.0 * motion.lit();
++    let tick = motion.tick(8.0);
++    for y in 0..6_u64 {
++        let height = y as f64 - (6.0 - flame);
++        if height < 0.0 {
++            continue;
++        }
++        for x in 1..5_u64 {
++            if noise(&[x, y, tick]) < 0.3 + 0.1 * height {
++                pen.dot(x as f64, y as f64, Part::Flame);
++            }
++        }
++    }
++    pen.dot(0.0, 6.0, Part::Frame);
++    pen.dot(5.0, 6.0, Part::Frame);
++    pen.row(7.0, Part::Frame);
++    pen.column(1.0, 8.0, h - 1.0, Part::Frame);
++    pen.column(4.0, 8.0, h - 1.0, Part::Frame);
++    pen.row(h - 1.0, Part::Frame);
++    let shaft = (h as u64).saturating_sub(10).max(1);
++    for k in 0..3_u64 {
++        let rise = (motion.tick(6.0) + k * 5) % shaft;
++        pen.dot(2.0 + (k % 2) as f64, h - 2.0 - rise as f64, Part::Spark);
++    }
++}
++
++/// A fall of water between two walls, filling a pool from the base.
++fn water(pen: &mut Pen, motion: Motion) {
++    let h = pen.height;
++    pen.row(0.0, Part::Core);
++    pen.column(0.0, 1.0, h, Part::Frame);
++    pen.column(5.0, 1.0, h, Part::Frame);
++    let t = motion.tick(6.0) as i64;
++    let level = pen.lit_from.ceil().max(1.0) as i64;
++    for y in 1..h as i64 {
++        if (y - t).rem_euclid(4) < 2 {
++            pen.dot(2.0, y as f64, Part::Frame);
++        }
++        if (y - t + 2).rem_euclid(4) < 2 {
++            pen.dot(3.0, y as f64, Part::Frame);
++        }
++        if y >= level {
++            for x in 1..5_i64 {
++                if (x + y + t).rem_euclid(3) == 0 {
++                    pen.dot(x as f64, y as f64, Part::Accent);
++                }
++            }
++        }
++    }
++}
++
++/// A coil with rings, arcing at the top once well charged.
++fn thunder(pen: &mut Pen, motion: Motion) {
++    let h = pen.height;
++    pen.column(2.0, 0.0, h, Part::Frame);
++    pen.column(3.0, 0.0, h, Part::Frame);
++    let mut y = 2.0;
++    while y < h {
++        pen.row(y, Part::Core);
++        y += 5.0;
++    }
++    if motion.lit() >= 0.6 {
++        let tick = motion.tick(10.0);
++        for y in 0..6_u64 {
++            pen.dot((noise(&[y, tick]) * 5.0).round(), y as f64, Part::Flame);
++        }
++    }
++}
++
++/// Stacked stone blocks with a weathered face.
++fn earth(pen: &mut Pen) {
++    let h = pen.height;
++    pen.column(0.0, 0.0, h, Part::Frame);
++    pen.column(5.0, 0.0, h, Part::Frame);
++    let mut y = 0.0;
++    while y < h {
++        pen.row(y, Part::Frame);
++        y += 8.0;
++    }
++    pen.row(h - 1.0, Part::Frame);
++    for y in 0..h as u64 {
++        for x in 1..5_u64 {
++            if y % 8 != 0 && noise(&[x, y, 7]) < 0.2 {
++                pen.dot(x as f64, y as f64, Part::Core);
++            }
++        }
++    }
++}
++
++/// A beam of light under a star, with sparks rising beside it.
++fn holy(pen: &mut Pen, motion: Motion) {
++    let h = pen.height;
++    pen.column(2.0, 2.0, h, Part::Core);
++    pen.column(3.0, 2.0, h, Part::Core);
++    let mut y = 3.0;
++    while y < h {
++        pen.dot(1.0, y, Part::Frame);
++        pen.dot(4.0, y, Part::Frame);
++        y += 2.0;
++    }
++    for (x, y) in [(2.0, 0.0), (3.0, 0.0), (1.0, 1.0), (4.0, 1.0)] {
++        pen.dot(x, y, Part::Flame);
++    }
++    for k in 0..3_u64 {
++        let rise = (motion.tick(5.0) + k * 9) % h as u64;
++        let x = if k % 2 == 0 { 0.0 } else { 5.0 };
++        pen.dot(x, h - 1.0 - rise as f64, Part::Spark);
++    }
++}
++
++/// Two tendrils swaying apart, with drops falling between them.
++fn tendrils(pen: &mut Pen, motion: Motion) {
++    let h = pen.height;
++    for y in 0..h as u64 {
++        let y = y as f64;
++        let wave = (y * 0.35 + motion.spin * 1.5).sin() * 2.2;
++        pen.dot(2.5 + wave, y, Part::Frame);
++        pen.dot(2.5 - wave, y, Part::Core);
++    }
++    for k in 0..2_u64 {
++        let fall = (motion.tick(4.0) + k * 7) % h as u64;
++        pen.dot(2.0 + k as f64, fall as f64, Part::Accent);
++    }
++}
++
++/// A stitched seam with an eye that wanders and blinks.
++fn seam(pen: &mut Pen, motion: Motion) {
++    let h = pen.height;
++    pen.column(2.0, 0.0, h, Part::Frame);
++    let mut y = 1.0;
++    while y < h {
++        let skew = (noise(&[y as u64, 3]) * 2.0).round() - 1.0;
++        pen.dot(1.0 + skew.max(0.0), y, Part::Core);
++        pen.dot(3.0, y, Part::Core);
++        pen.dot(4.0 + skew.min(0.0), y, Part::Core);
++        y += 4.0;
++    }
++    let room = (h as u64).saturating_sub(8).max(1);
++    let eye = ((motion.tick(0.4) * 7) % room + 4) as f64;
++    for (x, dy) in [
++        (1.0, 0.0),
++        (4.0, 0.0),
++        (2.0, -1.0),
++        (3.0, -1.0),
++        (2.0, 1.0),
++        (3.0, 1.0),
++    ] {
++        pen.dot(x, eye + dy, Part::Flame);
++    }
++    if motion.tick(2.0) % 9 != 8 {
++        pen.dot(2.0 + (motion.tick(1.0) % 2) as f64, eye, Part::Spark);
++    }
++}
++
++/// A segmented gauge in a frame, with a scan dot on its edge.
++fn meter(pen: &mut Pen, motion: Motion) {
++    let h = pen.height;
++    pen.column(0.0, 0.0, h, Part::Frame);
++    pen.column(5.0, 0.0, h, Part::Frame);
++    pen.row(0.0, Part::Frame);
++    pen.row(h - 1.0, Part::Frame);
++    let mut base = h - 2.0;
++    while base - 2.0 >= 1.0 {
++        for dy in 0..3 {
++            for x in 1..5 {
++                pen.dot(f64::from(x), base - f64::from(dy), Part::Core);
++            }
++        }
++        base -= 4.0;
++    }
++    let scan = h - 1.0 - (motion.tick(8.0) % h as u64) as f64;
++    pen.dot(0.0, scan, Part::Spark);
++}
+--- /dev/null
++++ b/codex-rs/tui/src/magic_sides/spells.rs
+@@ -0,0 +1,385 @@
++//! Tool calls told as spells, and the record of what one turn has cast.
++
++use serde_json::Value;
++use unicode_segmentation::UnicodeSegmentation;
++
++use crate::magic_circle::display_text;
++
++/// Spells kept per turn; the page shows the latest that fit.
++const KEEP: usize = 32;
++/// Graphemes kept from an argument; the page cuts it further to fit.
++const DETAIL_LIMIT: usize = 60;
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(crate) enum SpellKind {
++    Track,
++    Insight,
++    Inscribe,
++    Ritual,
++    Farsight,
++    Summon,
++    Tome,
++    Pact,
++    Memory,
++    Query,
++    Arcane,
++}
++
++impl SpellKind {
++    /// The spell a tool casts, from the words of its name. MCP tools are pacts.
++    pub(crate) fn of(tool: &str, mcp: bool) -> Self {
++        if mcp {
++            return Self::Pact;
++        }
++        let tool = tool.to_ascii_lowercase();
++        let words: Vec<&str> = tool
++            .split(|c: char| !c.is_ascii_alphanumeric())
++            .filter(|word| !word.is_empty())
++            .collect();
++        let any = |set: &[&str]| words.iter().any(|word| set.contains(word));
++        // Shells come before reading and writing: `read_powershell` reads a shell.
++        if any(&["web", "fetch", "browse", "http", "url", "download"]) {
++            Self::Farsight
++        } else if any(&["agent", "agents", "task", "delegate", "subagent"]) {
++            Self::Summon
++        } else if any(&["skill", "skills"]) {
++            Self::Tome
++        } else if any(&["sql", "memory", "memories", "remember"]) {
++            Self::Memory
++        } else if any(&["ask"]) {
++            Self::Query
++        } else if any(&[
++            "powershell",
++            "pwsh",
++            "bash",
++            "sh",
++            "shell",
++            "exec",
++            "terminal",
++            "cmd",
++            "command",
++            "run",
++        ]) {
++            Self::Ritual
++        } else if any(&[
++            "glob", "grep", "rg", "search", "find", "locate", "lsp", "symbols",
++        ]) {
++            Self::Track
++        } else if any(&["view", "read", "cat", "open", "show", "list", "ls", "get"]) {
++            Self::Insight
++        } else if any(&[
++            "edit", "create", "write", "apply", "patch", "replace", "insert", "delete", "remove",
++            "rename", "move", "update",
++        ]) {
++            Self::Inscribe
++        } else {
++            Self::Arcane
++        }
++    }
++
++    pub(crate) fn name(self) -> &'static str {
++        match self {
++            Self::Track => "寻踪术",
++            Self::Insight => "洞察之眼",
++            Self::Inscribe => "符文刻印",
++            Self::Ritual => "召唤仪式",
++            Self::Farsight => "千里眼",
++            Self::Summon => "召唤使魔",
++            Self::Tome => "翻阅秘典",
++            Self::Pact => "契约之力",
++            Self::Memory => "记忆水晶",
++            Self::Query => "叩问之铃",
++            Self::Arcane => "未名秘术",
++        }
++    }
++}
++
++/// Arguments as an object, also when they arrive as a JSON string.
++fn object(arguments: Option<&Value>) -> Option<Value> {
++    match arguments? {
++        Value::String(text) => serde_json::from_str(text).ok(),
++        other => Some(other.clone()),
++    }
++}
++
++fn field(arguments: &Value, keys: &[&str]) -> Option<String> {
++    keys.iter()
++        .find_map(|key| arguments.get(*key).and_then(Value::as_str))
++        .map(str::to_string)
++}
++
++/// The argument that says most about a call: a search pattern, a file name, the first line
++/// of a command, a URL, an agent or skill name. Other arguments are never shown.
++pub(crate) fn detail(tool: &str, mcp: bool, arguments: Option<&Value>) -> String {
++    let Some(arguments) = object(arguments) else {
++        return String::new();
++    };
++    let text = match SpellKind::of(tool, mcp) {
++        SpellKind::Track => field(&arguments, &["pattern", "query", "regex"]),
++        SpellKind::Insight | SpellKind::Inscribe => {
++            field(&arguments, &["path", "file_path", "filePath", "file"])
++                .map(|path| file_name(&path))
++        }
++        SpellKind::Ritual => {
++            field(&arguments, &["command", "cmd"]).map(|command| first_line(&command))
++        }
++        SpellKind::Farsight => field(&arguments, &["url", "query"]),
++        SpellKind::Summon => field(
++            &arguments,
++            &["name", "agent_type", "agentType", "description"],
++        ),
++        SpellKind::Tome => field(&arguments, &["skill", "name"]),
++        SpellKind::Memory => field(&arguments, &["description"]),
++        SpellKind::Pact | SpellKind::Query | SpellKind::Arcane => None,
++    };
++    text.map(|text| clean(&text)).unwrap_or_default()
++}
++
++/// What a `report_intent` call announces; Copilot shows it as its status line.
++// Copilot's session log reports intents; Codex has no such event.
++#[allow(dead_code)]
++pub(crate) fn intent(arguments: Option<&Value>) -> Option<String> {
++    let intent = clean(&field(&object(arguments)?, &["intent"])?);
++    (!intent.is_empty()).then_some(intent)
++}
++
++pub(crate) fn file_name(path: &str) -> String {
++    let path = path.trim_end_matches(['/', '\\']);
++    path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
++}
++
++pub(crate) fn first_line(text: &str) -> String {
++    text.lines()
++        .map(str::trim)
++        .find(|line| !line.is_empty())
++        .unwrap_or_default()
++        .to_string()
++}
++
++/// One printable line of at most [`DETAIL_LIMIT`] graphemes.
++fn clean(text: &str) -> String {
++    display_text(text)
++        .split_whitespace()
++        .collect::<Vec<_>>()
++        .join(" ")
++        .graphemes(/*is_extended*/ true)
++        .take(DETAIL_LIMIT)
++        .collect()
++}
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(crate) enum SpellState {
++    Casting,
++    Done,
++    Failed,
++}
++
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub(crate) struct Spell {
++    pub(crate) id: String,
++    pub(crate) kind: SpellKind,
++    pub(crate) detail: String,
++    pub(crate) state: SpellState,
++}
++
++/// What one turn has cast so far.
++#[derive(Clone, Debug, Default, PartialEq, Eq)]
++pub(crate) struct Chronicle {
++    /// The latest top-level calls, oldest first.
++    pub(crate) spells: Vec<Spell>,
++    /// Top-level calls this turn, including those no longer kept.
++    pub(crate) cast: usize,
++    /// Calls made inside subagents, counted but not listed.
++    pub(crate) helpers: usize,
++    pub(crate) summons: usize,
++    /// Public replies received this turn.
++    pub(crate) oracles: usize,
++    pub(crate) intent: Option<String>,
++}
++
++impl Chronicle {
++    pub(crate) fn cast(&mut self, id: &str, tool: &str, detail: &str, mcp: bool, nested: bool) {
++        if nested {
++            self.helpers += 1;
++            return;
++        }
++        if !id.is_empty() && self.spells.iter().any(|spell| spell.id == id) {
++            return;
++        }
++        let kind = SpellKind::of(tool, mcp);
++        let detail = if detail.is_empty() && kind == SpellKind::Arcane {
++            clean(tool)
++        } else {
++            clean(detail)
++        };
++        self.push(Spell {
++            id: id.to_string(),
++            kind,
++            detail,
++            state: SpellState::Casting,
++        });
++    }
++
++    fn push(&mut self, spell: Spell) {
++        self.cast += 1;
++        self.spells.push(spell);
++        if self.spells.len() > KEEP {
++            self.spells.remove(0);
++        }
++    }
++
++    pub(crate) fn resolve(&mut self, id: &str, ok: bool) {
++        if let Some(spell) = self.spells.iter_mut().find(|spell| spell.id == id) {
++            spell.state = if ok {
++                SpellState::Done
++            } else {
++                SpellState::Failed
++            };
++        }
++    }
++
++    /// A subagent started, usually by the call `id`, which it then names.
++    pub(crate) fn summon(&mut self, id: &str, name: &str) {
++        self.summons += 1;
++        let name = clean(name);
++        match self
++            .spells
++            .iter_mut()
++            .find(|spell| !id.is_empty() && spell.id == id)
++        {
++            Some(spell) => {
++                spell.kind = SpellKind::Summon;
++                if !name.is_empty() {
++                    spell.detail = name;
++                }
++            }
++            None => self.push(Spell {
++                id: id.to_string(),
++                kind: SpellKind::Summon,
++                detail: name,
++                state: SpellState::Casting,
++            }),
++        }
++    }
++
++    /// A skill was invoked; one already listed through its tool call is not listed again.
++    // Copilot's session log reports skills; Codex has no such event.
++    #[allow(dead_code)]
++    pub(crate) fn tome(&mut self, name: &str) {
++        let name = clean(name);
++        if self
++            .spells
++            .iter()
++            .any(|spell| spell.kind == SpellKind::Tome && spell.detail == name)
++        {
++            return;
++        }
++        self.push(Spell {
++            id: String::new(),
++            kind: SpellKind::Tome,
++            detail: name,
++            state: SpellState::Done,
++        });
++    }
++
++    pub(crate) fn oracle(&mut self) {
++        self.oracles += 1;
++    }
++
++    // Copilot's session log reports intents; Codex has no such event.
++    #[allow(dead_code)]
++    pub(crate) fn intend(&mut self, intent: &str) {
++        let intent = clean(intent);
++        if !intent.is_empty() {
++            self.intent = Some(intent);
++        }
++    }
++
++    /// The newest call still running.
++    pub(crate) fn casting(&self) -> Option<&Spell> {
++        self.spells
++            .iter()
++            .rev()
++            .find(|spell| spell.state == SpellState::Casting)
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use serde_json::json;
++
++    #[test]
++    fn tools_are_named_by_the_words_of_their_names() {
++        let cases = [
++            ("glob", SpellKind::Track),
++            ("grep", SpellKind::Track),
++            ("view", SpellKind::Insight),
++            ("edit", SpellKind::Inscribe),
++            ("apply_patch", SpellKind::Inscribe),
++            ("powershell", SpellKind::Ritual),
++            ("read_powershell", SpellKind::Ritual),
++            ("web_fetch", SpellKind::Farsight),
++            ("web_search", SpellKind::Farsight),
++            ("task", SpellKind::Summon),
++            ("read_agent", SpellKind::Summon),
++            ("skill", SpellKind::Tome),
++            ("sql", SpellKind::Memory),
++            ("store_memory", SpellKind::Memory),
++            ("ask_user", SpellKind::Query),
++            ("truncate", SpellKind::Arcane),
++        ];
++        for (tool, kind) in cases {
++            assert_eq!(SpellKind::of(tool, false), kind, "{tool}");
++        }
++        assert_eq!(SpellKind::of("search_code", true), SpellKind::Pact);
++    }
++
++    #[test]
++    fn details_show_one_telling_argument() {
++        let of = |tool: &str, value: Value| detail(tool, false, Some(&value));
++        assert_eq!(of("glob", json!({"pattern": "*.md"})), "*.md");
++        assert_eq!(
++            of("view", json!({"path": "C:\\repo\\src\\app.rs"})),
++            "app.rs"
++        );
++        assert_eq!(
++            of("powershell", json!({"command": "\n  git   status\nmore"})),
++            "git status"
++        );
++        assert_eq!(of("glob", json!("{\"pattern\":\"src/**\"}")), "src/**");
++        assert_eq!(of("ask_user", json!({"message": "secret"})), "");
++        assert_eq!(of("grep", json!({"pattern": "a\u{1b}[31m\u{202e}b"})), "ab");
++        assert_eq!(
++            intent(Some(&json!({"intent": "Exploring codebase"}))).as_deref(),
++            Some("Exploring codebase")
++        );
++    }
++
++    #[test]
++    fn a_turn_records_its_spells() {
++        let mut chronicle = Chronicle::default();
++        chronicle.cast("1", "glob", "*.md", false, false);
++        chronicle.cast("1", "glob", "*.md", false, false);
++        chronicle.cast("2", "task", "", false, false);
++        chronicle.summon("2", "explore");
++        chronicle.cast("3", "view", "a.rs", false, true);
++        chronicle.resolve("1", true);
++        chronicle.tome("azure-image-gen");
++        chronicle.tome("azure-image-gen");
++        assert_eq!(chronicle.cast, 3);
++        assert_eq!((chronicle.helpers, chronicle.summons), (1, 1));
++        assert_eq!(chronicle.spells[0].state, SpellState::Done);
++        assert_eq!(chronicle.spells[1].kind, SpellKind::Summon);
++        assert_eq!(chronicle.spells[1].detail, "explore");
++        assert_eq!(
++            chronicle.casting().map(|spell| spell.id.as_str()),
++            Some("2")
++        );
++        for id in 0..40 {
++            chronicle.cast(&format!("x{id}"), "grep", "", false, false);
++        }
++        assert_eq!(chronicle.spells.len(), KEEP);
++        assert_eq!(chronicle.cast, 43);
++    }
++}
+--- /dev/null
++++ b/codex-rs/tui/src/magic_sides_tests.rs
+@@ -0,0 +1,271 @@
++use super::*;
++use crate::magic_circle::MagicScene;
++use crate::magic_circle::MagicView;
++
++/// A circle that charged fully before its first reply, and the moment `age` after its prompt.
++fn charged(age: f64) -> (MagicCircle, Instant) {
++    let start = Instant::now();
++    let mut circle = MagicCircle::default();
++    circle.submit("Magicodex 法阵两侧：魔导书、法阵柱与使魔", start);
++    circle.complete_reply(
++        "先检查渲染循环，再展开法阵",
++        start + Duration::from_secs(20),
++    );
++    (circle, start + Duration::from_secs_f64(age))
++}
++
++fn cast(circle: &mut MagicCircle) {
++    let chronicle = &mut circle.chronicle;
++    chronicle.cast("1", "glob", "*.md", false, false);
++    chronicle.resolve("1", true);
++    chronicle.cast("2", "view", "app.rs", false, false);
++    chronicle.resolve("2", false);
++    chronicle.cast("3", "powershell", "cargo test", false, false);
++    chronicle.oracle();
++}
++
++fn circle_only(
++    circle: &MagicCircle,
++    style: MagicStyle,
++    area: Rect,
++    now: Instant,
++    outlet: bool,
++    animations: bool,
++) -> Buffer {
++    let mut buf = Buffer::empty(area);
++    let scene = if outlet {
++        MagicScene::Outlet
++    } else {
++        MagicScene::Live
++    };
++    MagicView {
++        circle,
++        style,
++        animations_enabled: animations,
++        scene,
++    }
++    .render_at(area, &mut buf, now);
++    buf
++}
++
++fn with_sides(
++    circle: &MagicCircle,
++    style: MagicStyle,
++    area: Rect,
++    now: Instant,
++    animations: bool,
++    outlet: Option<Outlet>,
++) -> Buffer {
++    let mut buf = circle_only(circle, style, area, now, outlet.is_some(), animations);
++    SideView {
++        circle,
++        style,
++        animations,
++        outlet,
++    }
++    .render(area, &mut buf, now);
++    buf
++}
++
++fn text(buf: &Buffer, columns: std::ops::Range<u16>) -> String {
++    let mut text = String::new();
++    for y in 0..buf.area.height {
++        let mut skip = 0;
++        for x in columns.clone() {
++            if skip > 0 {
++                skip -= 1;
++                continue;
++            }
++            let symbol = buf[(x, y)].symbol();
++            text.push_str(symbol);
++            skip = symbol.width().saturating_sub(1);
++        }
++        text.push('\n');
++    }
++    text
++}
++
++#[test]
++fn every_style_stays_inside_the_footprint() {
++    let center = 59;
++    for style in MagicStyle::ALL {
++        for age in [21.0, 25.3, 33.7] {
++            for (height, outlet) in [(21, false), (24, true)] {
++                let (circle, now) = charged(age);
++                let buf = circle_only(
++                    &circle,
++                    style,
++                    Rect::new(0, 0, 120, height),
++                    now,
++                    outlet,
++                    true,
++                );
++                for y in 0..height {
++                    for x in 0..120 {
++                        if buf[(x, y)].symbol() != " " {
++                            assert!(
++                                x.abs_diff(center) <= FOOTPRINT,
++                                "{} at age {age} draws column {x}",
++                                style.id()
++                            );
++                        }
++                    }
++                }
++            }
++        }
++    }
++}
++
++#[test]
++fn the_width_decides_what_fits() {
++    let tier = |width| Layout::of(Rect::new(0, 0, width, 21), false).map(|layout| layout.tier);
++    assert_eq!(tier(60), None);
++    assert_eq!(tier(80), Some(Tier::Decor));
++    assert_eq!(tier(100), Some(Tier::Compact));
++    assert_eq!(tier(120), Some(Tier::Full));
++    assert_eq!(Layout::of(Rect::new(0, 0, 120, MIN_ROWS - 1), false), None);
++    let layout = Layout::of(Rect::new(0, 0, 120, 21), false).unwrap();
++    assert_eq!(layout.left.right(), 59 - FOOTPRINT - GAP);
++    assert_eq!(layout.right.x, 59 + FOOTPRINT + GAP + 1);
++}
++
++#[test]
++fn the_sides_leave_the_circle_alone() {
++    let area = Rect::new(0, 0, 120, 21);
++    for style in MagicStyle::ALL {
++        let (mut circle, now) = charged(24.0);
++        cast(&mut circle);
++        let plain = circle_only(&circle, style, area, now, false, true);
++        let full = with_sides(&circle, style, area, now, true, None);
++        for y in 0..area.height {
++            for x in 59 - FOOTPRINT - GAP..=59 + FOOTPRINT + GAP {
++                assert_eq!(
++                    full[(x, y)],
++                    plain[(x, y)],
++                    "{} cell ({x}, {y})",
++                    style.id()
++                );
++            }
++        }
++        for side in [0..35, 84..120] {
++            assert!(
++                text(&full, side)
++                    .chars()
++                    .any(|c| ('\u{2801}'..='\u{28ff}').contains(&c)),
++                "{} art",
++                style.id()
++            );
++        }
++    }
++}
++
++#[test]
++fn the_pages_tell_the_turn() {
++    let (mut circle, now) = charged(24.0);
++    cast(&mut circle);
++    let full = with_sides(
++        &circle,
++        MagicStyle::Fire,
++        Rect::new(0, 0, 120, 21),
++        now,
++        true,
++        None,
++    );
++    let (left, right) = (text(&full, 0..35), text(&full, 84..120));
++    for expected in [
++        "咏唱记录",
++        "寻踪术",
++        "*.md",
++        "√",
++        "×",
++        "召唤仪式",
++        "cargo test",
++    ] {
++        assert!(left.contains(expected), "{expected} missing:\n{left}");
++    }
++    for expected in [
++        "施法状态",
++        "T+24.0s",
++        "满盈",
++        "法术 3 · 使魔 0 · 神谕 1",
++        "( °o° )",
++        "使魔 · 跑腿 召唤仪式",
++    ] {
++        assert!(right.contains(expected), "{expected} missing:\n{right}");
++    }
++    let compact = with_sides(
++        &circle,
++        MagicStyle::Fire,
++        Rect::new(0, 0, 100, 21),
++        now,
++        true,
++        None,
++    );
++    let (left, right) = (text(&compact, 0..25), text(&compact, 74..100));
++    assert!(left.contains("寻踪术") && !left.contains("*.md"), "{left}");
++    assert!(
++        right.contains("阶段 · 满盈") && !right.contains("使魔 ·"),
++        "{right}"
++    );
++    let narrow = with_sides(
++        &circle,
++        MagicStyle::Fire,
++        Rect::new(0, 0, 80, 21),
++        now,
++        true,
++        None,
++    );
++    assert!(
++        !text(&narrow, 0..80).contains("寻踪术"),
++        "only art fits in 80 columns"
++    );
++    let settled = Some(Outlet {
++        took: Duration::from_secs(23),
++        progress: 0.1,
++    });
++    let outlet = with_sides(
++        &circle,
++        MagicStyle::Fire,
++        Rect::new(0, 0, 120, 24),
++        now,
++        true,
++        settled,
++    );
++    let right = text(&outlet, 84..120);
++    assert!(
++        right.contains("神谕降临 · 用时 23.0s") && right.contains("使魔 · 欢呼！"),
++        "{right}"
++    );
++}
++
++#[test]
++fn without_animations_the_sides_stand_still() {
++    // Only the sides: the tech circle shows a real clock even without animations.
++    let area = Rect::new(0, 0, 80, 21);
++    let sides = |buf: &Buffer| -> Vec<ratatui::buffer::Cell> {
++        let band = 39 - FOOTPRINT - GAP..=39 + FOOTPRINT + GAP;
++        (0..area.height)
++            .flat_map(|y| (0..area.width).map(move |x| (x, y)))
++            .filter(|(x, _)| !band.contains(x))
++            .map(|position| buf[position].clone())
++            .collect()
++    };
++    for style in MagicStyle::ALL {
++        let (circle, now) = charged(24.0);
++        let later = now + Duration::from_millis(1700);
++        let still = sides(&with_sides(&circle, style, area, now, false, None));
++        assert_eq!(
++            still,
++            sides(&with_sides(&circle, style, area, later, false, None)),
++            "{}",
++            style.id()
++        );
++        let moving = sides(&with_sides(&circle, style, area, now, true, None));
++        assert_ne!(
++            moving,
++            sides(&with_sides(&circle, style, area, later, true, None)),
++            "{} moves",
++            style.id()
++        );
++    }
++}

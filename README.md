@@ -26,7 +26,7 @@ Works with **GitHub Copilot CLI** and **OpenAI Codex CLI**. The original program
 - **Answers born from the circle**: when the final reply begins, the circle freezes, light shines down from its center, and the reply appears below the circle.
 - **10 magic circles**: Classic, Wind, Fire, Water, Thunder, Earth, Holy, Dark, Eerie and Tech. Each has its own shape, motion, text path, idle emblem and outlet, not just a different color. Preview and pick one with `/magic list`.
 - **Stays out of the way**: `/magic` commands are handled locally and never sent to the model. The animation makes no extra model calls and uses no quota.
-- **Beside the circle** (magicopilot): while it charges, the left page of a grimoire lists the agent's tool calls as spells (Tracking for searches, Insight for reading, Ritual for shell commands, Summon Familiar for subagents…) and the right page shows the elapsed time, the charge stage and the counts. Two pillars in the circle's own style light up layer by layer, rune particles drift toward the circle, and a small cat familiar chants, runs errands and cheers when the answer arrives.
+- **Beside the circle**: while it charges, the left page of a grimoire lists the agent's tool calls as spells (Tracking for searches, Insight for reading, Ritual for shell commands, Summon Familiar for subagents…) and the right page shows the elapsed time, the charge stage and the counts. Two pillars in the circle's own style light up layer by layer, rune particles drift toward the circle, and a small cat familiar chants and runs errands (in magicopilot it also cheers when the answer arrives).
 
 ## Choose a version
 
@@ -102,7 +102,7 @@ The circle is on by default and drawn above Copilot's interface: 5 rows when idl
 
 Run `magicodex`; the first time, sign in with `magicodex login`. It takes the same arguments as the official `codex`.
 
-The circle is **off** by default, so you get the original start screen; type `/magic on` in the input box to turn it on. The circle is drawn above the input box, and the final reply unfolds from the outlet below it and stays in the transcript. `/magic off` also hides the circles in the history, without affecting the replies themselves.
+The circle is **off** by default, so you get the original start screen; type `/magic on` in the input box to turn it on. The circle is drawn above the input box, and the final reply unfolds from the outlet below it and stays in the transcript. `/magic off` also hides the circles in the history, without affecting the replies themselves. While a turn charges, the circle above the input box has the same grimoire, pillars, particles and familiar beside it as in magicopilot; the outlet kept in the transcript has none of them.
 
 ![The Codex classic circle: it unfolds layer by layer while you wait, and the final reply pours out below the cone of light](docs/images/magic-classic.png)
 
@@ -235,7 +235,7 @@ Building from source, the patch structure, testing and the full verification rec
 - **回答从法阵中诞生**：最终回复开始时，法阵定格，光从阵心向下投出，正文从法阵下方出现。
 - **10 种法阵**：经典、风、火、水、雷、土、神圣、黑暗、诡异、科技。外形、动态、文字走向、待机小阵和出口各不相同，不只是换颜色。用 `/magic list` 边看边选。
 - **不打扰原程序**：`/magic` 命令在本机处理，不会发给模型；动画不额外调用模型，也不消耗额度。
-- **法阵两侧**（magicopilot）：蓄力时，左页“咏唱记录”把模型的工具调用写成法术（搜索是寻踪术、读文件是洞察之眼、终端命令是召唤仪式、子代理是召唤使魔……），右页显示咏唱时长、施法阶段和各项计数；两根与法阵同款的法阵柱随层数逐层点亮，符文粒子向阵心汇聚，小猫使魔会跟着吟唱、跑腿，回答到来时欢呼。
+- **法阵两侧**：蓄力时，左页“咏唱记录”把模型的工具调用写成法术（搜索是寻踪术、读文件是洞察之眼、终端命令是召唤仪式、子代理是召唤使魔……），右页显示咏唱时长、施法阶段和各项计数；两根与法阵同款的法阵柱随层数逐层点亮，符文粒子向阵心汇聚，小猫使魔会跟着吟唱、跑腿（magicopilot 中回答到来时它还会欢呼）。
 
 ## 选择版本
 
@@ -311,7 +311,7 @@ magicopilot --magic-style 雷   # 以雷系法阵启动
 
 运行 `magicodex`，第一次使用先运行 `magicodex login` 登录。参数与官方 `codex` 相同。
 
-法阵默认**关闭**，保持原版的起始界面；在输入框里输入 `/magic on` 开启。法阵画在输入框上方，最终回复从法阵下方的出口展开，并留在对话记录里；`/magic off` 会连同历史里的法阵一起隐藏，回复本身不受影响。
+法阵默认**关闭**，保持原版的起始界面；在输入框里输入 `/magic on` 开启。法阵画在输入框上方，最终回复从法阵下方的出口展开，并留在对话记录里；`/magic off` 会连同历史里的法阵一起隐藏，回复本身不受影响。蓄力时，输入框上方的法阵两侧同样有魔导书、法阵柱、符文粒子和使魔；定格在对话记录里的出口不带这些内容。
 
 ![Codex 版的 classic 法阵：等待时逐层展开，最终回复从光锥下方吐出](docs/images/magic-classic.png)
 

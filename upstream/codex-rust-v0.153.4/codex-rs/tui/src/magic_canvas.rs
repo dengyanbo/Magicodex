@@ -361,6 +361,16 @@ impl<'a> Canvas<'a> {
         self.glyphs.push((left, row, glyph, end - start, style));
     }
 
+    /// Keeps strokes out of `width` cells from `(left, row)`, where other content goes.
+    pub(crate) fn reserve(&mut self, (left, row): (usize, usize), width: usize) {
+        if row >= self.height || left >= self.width {
+            return;
+        }
+        let start = row * self.width + left;
+        let end = (start + width).min((row + 1) * self.width);
+        self.reserved[start..end].fill(true);
+    }
+
     pub(crate) fn paint(self, area: Rect, buf: &mut Buffer, palette: &Palette) {
         for (index, (mask, ink)) in self.dots.into_iter().enumerate() {
             // Text replaces the strokes in its cells instead of inheriting their style.

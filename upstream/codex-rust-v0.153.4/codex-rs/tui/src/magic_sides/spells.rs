@@ -3,7 +3,7 @@
 use serde_json::Value;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::circle::state::display_text;
+use crate::magic_circle::display_text;
 
 /// Spells kept per turn; the page shows the latest that fit.
 const KEEP: usize = 32;
@@ -136,6 +136,8 @@ pub(crate) fn detail(tool: &str, mcp: bool, arguments: Option<&Value>) -> String
 }
 
 /// What a `report_intent` call announces; Copilot shows it as its status line.
+// Copilot's session log reports intents; Codex has no such event.
+#[allow(dead_code)]
 pub(crate) fn intent(arguments: Option<&Value>) -> Option<String> {
     let intent = clean(&field(&object(arguments)?, &["intent"])?);
     (!intent.is_empty()).then_some(intent)
@@ -261,6 +263,8 @@ impl Chronicle {
     }
 
     /// A skill was invoked; one already listed through its tool call is not listed again.
+    // Copilot's session log reports skills; Codex has no such event.
+    #[allow(dead_code)]
     pub(crate) fn tome(&mut self, name: &str) {
         let name = clean(name);
         if self
@@ -282,6 +286,8 @@ impl Chronicle {
         self.oracles += 1;
     }
 
+    // Copilot's session log reports intents; Codex has no such event.
+    #[allow(dead_code)]
     pub(crate) fn intend(&mut self, intent: &str) {
         let intent = clean(intent);
         if !intent.is_empty() {

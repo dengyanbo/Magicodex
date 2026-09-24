@@ -4,7 +4,8 @@
   "native_magic_base_ref": "11cbcbc250297f8b50ea94ac6851b11170c4de9d",
   "kept_stages": [
     "0003-downward-reply.patch",
-    "0004-visual-refresh.patch"
+    "0004-visual-refresh.patch",
+    "0005-magic-styles.patch"
   ],
   "protected_files_unchanged": 950,
   "windows_migration_preparation": {
@@ -70,18 +71,18 @@
     },
     {
       "path": "codex-rs/tui/src/chatwidget/magic.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "6cf9b24e5f185316061d1faa1de19b3609d72a65d230378bd2ff425c136c051c"
+      "stage": "0006-magic-sides.patch",
+      "sha256": "6a4ff3772ac7437e6a22c76c150bf65189f1dd084f55bd4e2e64971d0435e444"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/protocol.rs",
-      "stage": "0003-downward-reply.patch",
-      "sha256": "0b671f5726490363e82a445ef897231ab5e3a05844a1b4bc09626f099d340380"
+      "stage": "0006-magic-sides.patch",
+      "sha256": "e916d3c5b14b23c4bb85ea02d66b0da82f5fddd8a021a22ba7c138de5149750d"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/rendering.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "8fa0d7ce926d558e6b3a07c96446e61aee923b6c2ae7d89f3726d5376e73366e"
+      "stage": "0006-magic-sides.patch",
+      "sha256": "06f97bbac55b8f7a70d0cd552a7833135e9b21cf37d0a40461ba78c811f8d625"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/rendering_tests.rs",
@@ -115,8 +116,8 @@
     },
     {
       "path": "codex-rs/tui/src/chatwidget/tests/magic_tests.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "3439943726568e35ac112f8807915c3bc67724bca91ac73452b6411b985b0d4b"
+      "stage": "0006-magic-sides.patch",
+      "sha256": "755a8574ff55a4f6f51a7952e974412534284b73c58b0da3ed05a6e6661ee052"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/tests/plan_mode.rs",
@@ -160,18 +161,18 @@
     },
     {
       "path": "codex-rs/tui/src/lib.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "29f85c466a535a5351cd15e26dd115449936882577c6ecdb345fb2f72db30ebb"
+      "stage": "0006-magic-sides.patch",
+      "sha256": "9d93f042ce58de07fdad27c31b53702550d8ca853b1c057222c054a7cdfcc453"
     },
     {
       "path": "codex-rs/tui/src/magic_canvas.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "e1ce1a129e69a2f3a0b8055f72620a624fff96d1dc7112394e0211e575bb248b"
+      "stage": "0006-magic-sides.patch",
+      "sha256": "4a1c17851728fdb00eced0f79d9877ce59206610203695a0e6175555a7e610eb"
     },
     {
       "path": "codex-rs/tui/src/magic_circle.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "c9ff42eca16de42eac90b559b0901b06c315f6a1105a722561232a4a2c2d01fe"
+      "stage": "0006-magic-sides.patch",
+      "sha256": "590c125f577fa341e70a83d744d314fe19738dd90e2fcbadd1b72c526f5516c2"
     },
     {
       "path": "codex-rs/tui/src/magic_circle_tests.rs",
@@ -192,6 +193,41 @@
       "path": "codex-rs/tui/src/magic_picker.rs",
       "stage": "0005-magic-styles.patch",
       "sha256": "dbe0cb6055856600673e2ea9f4a3b4f5ea6fce25cda9b741eafb2bf211a53e86"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_sides.rs",
+      "stage": "0006-magic-sides.patch",
+      "sha256": "f0b3e5fbbb72da76ac97ebd46bd5cc0ffcc8d80ec522d6a2e6cc04f68ea17fb6"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_sides/familiar.rs",
+      "stage": "0006-magic-sides.patch",
+      "sha256": "6bc3f76df01e765bd05a7cdcbd2c309bb2471bfe660d6bd0b747e401e6f58767"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_sides/pages.rs",
+      "stage": "0006-magic-sides.patch",
+      "sha256": "8d6a569682659d57f64de4ead8bbc4a882ee568627b6194d4cb8f468751a6a63"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_sides/particles.rs",
+      "stage": "0006-magic-sides.patch",
+      "sha256": "ab6b30c1d2a3449b58b3bde8041112af4e2917ca26673e286e62010e597c6fe2"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_sides/pillars.rs",
+      "stage": "0006-magic-sides.patch",
+      "sha256": "b884f2970ac146bf36d4dcd448b3de675351c2ece3830b8d6f55117a9974df34"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_sides/spells.rs",
+      "stage": "0006-magic-sides.patch",
+      "sha256": "5bc4f674e6fb684ba4079561f7320ca8d39da7891ff97f36dd650f04348f58eb"
+    },
+    {
+      "path": "codex-rs/tui/src/magic_sides_tests.rs",
+      "stage": "0006-magic-sides.patch",
+      "sha256": "afa63be2d8769c43ef276ff88de0998faefdd0c736b1b414e874826491931141"
     },
     {
       "path": "codex-rs/tui/src/magic_style.rs",

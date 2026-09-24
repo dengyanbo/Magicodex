@@ -10,7 +10,7 @@ use super::Run;
 use super::Tier;
 use super::spells::Chronicle;
 use super::spells::SpellState;
-use crate::circle::style::Palette;
+use crate::magic_style::Palette;
 
 /// Stages of the charge, one per unlocked layer.
 pub(super) const STAGES: [&str; 5] = ["描线", "蓄力", "共鸣", "聚灵", "满盈"];

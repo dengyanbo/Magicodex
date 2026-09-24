@@ -354,6 +354,9 @@ impl ChatWidget {
         notification: ItemStartedNotification,
         from_replay: bool,
     ) {
+        if !from_replay {
+            self.record_magic_item_started(&notification.item);
+        }
         match notification.item {
             ThreadItem::AgentMessage { phase, .. } if !from_replay => {
                 self.magic_output.phase = phase;
@@ -403,6 +406,9 @@ impl ChatWidget {
         notification: ItemCompletedNotification,
         replay_kind: Option<ReplayKind>,
     ) {
+        if replay_kind.is_none() {
+            self.record_magic_item_completed(&notification.item);
+        }
         match notification.item {
             item @ ThreadItem::CommandExecution { .. } => self.on_command_execution_completed(item),
             item => self.handle_thread_item(

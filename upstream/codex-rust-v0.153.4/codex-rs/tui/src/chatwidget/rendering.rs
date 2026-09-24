@@ -71,11 +71,10 @@ impl ChatWidget {
         if self.magic.enabled() && !self.magic_output.emitted {
             flex.push(
                 /*flex*/ 1,
-                RenderableItem::Owned(Box::new(crate::magic_circle::MagicView {
+                RenderableItem::Owned(Box::new(crate::magic_sides::LiveView {
                     circle: &self.magic_circle,
                     style: self.magic.style(),
                     animations_enabled: self.config.animations,
-                    scene: crate::magic_circle::MagicScene::Live,
                 })),
             );
         }
