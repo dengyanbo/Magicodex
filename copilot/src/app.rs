@@ -308,6 +308,8 @@ pub(crate) fn run(options: &Options) -> io::Result<i32> {
     let now = Instant::now();
     let mut magic = Magic::new(options.enabled, MagicStyle::Classic, options.animations);
     magic.set_choice(options.style);
+    // Until Copilot draws anything, a circle charges over the empty screen.
+    magic.begin_summon(now);
     let region = magic.region_rows(rows, now);
     let spawned = Pty::spawn(&command_line, None, &env, (cols, rows - region))?;
     let pty = spawned.pty;
@@ -436,6 +438,7 @@ pub(crate) fn run(options: &Options) -> io::Result<i32> {
                         let rows = state.child.screen().size().0;
                         if (0..rows).any(|row| !state.child.row_text(row).trim().is_empty()) {
                             state.magic.greet(now);
+                            state.magic.summoned(now);
                             greeted = true;
                         }
                     }
@@ -528,7 +531,9 @@ pub(crate) fn run(options: &Options) -> io::Result<i32> {
                 render::region(magic, Rect::new(0, 0, area.width, region), buf, now);
                 let child_area = Rect::new(0, region, area.width, area.height - region);
                 let cursor = render::child(child, child_area, buf);
-                if let Some(cursor) = cursor.filter(|_| magic.picker.is_none()) {
+                render::summon(magic, area, buf, now);
+                if let Some(cursor) = cursor.filter(|_| magic.picker.is_none() && !magic.loading())
+                {
                     frame.set_cursor_position(cursor);
                 }
             })?;

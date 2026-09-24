@@ -376,8 +376,8 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
 | `screen.rs` | vt100 模拟 Copilot 的屏幕，把终端查询转交真实终端，跟踪同步输出、焦点、进度等状态 |
 | `input.rs` | 解析键盘、鼠标、粘贴，鼠标坐标按法阵高度平移 |
 | `session.rs` | 读取 `~/.copilot/session-state/<会话>/events.jsonl`，跟随会话切换 |
-| `magic.rs` | 法阵状态机（出口保留 15 秒、消散 1.6 秒）、区域高度、`/magic` 命令与输入框识别、输入时的用法提示、类型选择器与随机抽签 |
-| `render.rs`、`circle\` | 合成画面；10 种法阵的绘制（与 Codex 补丁同源） |
+| `magic.rs` | 法阵状态机（启动时的召唤法阵、出口保留 15 秒、消散 1.6 秒）、区域高度、`/magic` 命令与输入框识别、输入时的用法提示、类型选择器与随机抽签 |
+| `render.rs`、`circle\` | 合成画面（召唤法阵只画在 Copilot 未占用、离文字至少 2 列的空白处）；10 种法阵的绘制（与 Codex 补丁同源） |
 | `circle\dissolve.rs` | 法阵消失时的暗淡扩散：对整幅定格画面做变换，点阵外扩变稀、文字碎成点尘、颜色去粗体再转暗（Codex 不用） |
 | `circle\sides\` | 法阵两侧：布局与宽度分级、工具调用到法术的映射与本回合记录、魔导书两页、10 种法阵柱、符文粒子、使魔 |
 | `app.rs` | 主循环：子进程输出、输入、事件、限帧绘制、退出恢复 |
@@ -396,10 +396,25 @@ uv run --no-project --with pyte --with pywinpty --with psutil --with wcwidth --w
 
 - 构建使用 Rust 1.95.0 MSVC 工具链与 Visual Studio Build Tools。
 - 端到端测试在临时 `COPILOT_HOME` 中运行，不读写你自己的 Copilot 配置、会话或 Windows Terminal 设置。
+- 端到端测试开头先用一个 3 秒后才输出文字的替身代替 Copilot（`MAGICOPILOT_COPILOT`），确定性地检查召唤法阵：出现、转动变大、Copilot 出现后散去且不盖住文字。
 - 各参数的作用：
   - `--windows-terminal` 模拟 Windows Terminal 环境；
   - `--baseline` 另外直接运行一次 Copilot，对比发给模型的请求；
   - `--frames <目录>` 保存各阶段画面。
+
+### 验证记录（0.3.1）
+
+- 本版改动：Copilot 启动、还没画出任何东西时（端到端测试环境里实测约 6.2 秒，此前这段时间只有一个静止的待机小阵），屏幕中央画一座召唤法阵：
+  - 用当前类型的蓄力法阵，从启动时刻开始蓄力，“召唤 GitHub Copilot CLI”环绕，逐层绘入、转动、变大；待机小阵和光标在此期间隐藏。
+  - Copilot 画出第一个可见字符时，法阵按当时的样子用 `circle\dissolve.rs` 在 1.6 秒内散成光尘，待机小阵与启动提示同时出现。
+  - 召唤法阵只画在空白格上（无字符、默认背景、没有反显/下划线/删除线，也不是宽字符的后半格），并且左右 2 列内都不能有内容，所以不会盖住 Copilot 的文字，也不会落进词间空格。
+  - 不改变 Copilot 的伪终端大小；`--magic-off`、`--magic-no-motion` 时不出现；召唤中提交的 prompt 直接结束召唤。
+- 端到端 `tests\copilot_terminal.py` 在本机 Copilot CLI 1.0.87 上通过：
+  - 新增替身检查（3 秒后才输出的 `.cmd` 代替 Copilot）：召唤法阵 13 行、1.2 秒内画面变化且不缩小、含“召唤”；替身的文字完整、其后 2 列为空白；散去时有 19 行光尘，随后只剩顶部待机小阵。
+  - 真实 Copilot 启动 1.5 秒时仍在加载，屏幕上是召唤法阵（顶部 5 行为空）。
+  - 其余检查与 0.3.0 相同，全部通过。
+  - 统计会话数时排除 Copilot 有时会建的隐藏目录 `.session-operation-locks`（此前会被误算成第二个会话）。
+- 60 项单元测试通过（新增 3 项：召唤的起止与时序、关闭或无动画时不出现、prompt 结束召唤；整屏渲染时召唤法阵不画待机小阵、随时间变大、含召唤文字，散去时不碰 Copilot 的文字并留出 2 列空白，1.6 秒后只剩待机小阵）；Clippy（`-D warnings`）无告警。
 
 ### 验证记录（0.3.0）
 

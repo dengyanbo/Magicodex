@@ -27,6 +27,8 @@ const FADE_TIME: Duration = Duration::from_millis(1600);
 /// A final answer is final once no new model turn starts within this time.
 const FINAL_GRACE: Duration = Duration::from_millis(1200);
 const TOAST_TIME: Duration = Duration::from_millis(3500);
+/// What orbits the circle drawn while Copilot starts.
+const SUMMON_TEXT: &str = "召唤 GitHub Copilot CLI";
 const TOO_SHORT: &str = "窗口太矮，放不下样式列表 · 可直接输入 /magic <类型>";
 /// Shown while `/magic` is typed: Copilot's command list, which opens at the same time, only
 /// lists Copilot's own commands.
@@ -47,6 +49,35 @@ fn roll(dice: &mut u64) -> u64 {
     mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     mixed ^ (mixed >> 31)
+}
+
+/// How far a fade that began at `since` has run, 0 to 1.
+fn faded(since: Instant, now: Instant) -> f64 {
+    (now.saturating_duration_since(since).as_secs_f64() / FADE_TIME.as_secs_f64()).min(1.0)
+}
+
+/// The circle drawn over the empty screen while Copilot starts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Summon {
+    /// Copilot has drawn nothing yet; the circle charges from `since`, the launch.
+    Loading {
+        since: Instant,
+    },
+    /// Copilot appeared at `at`; the circle scatters as it was then.
+    Scattering {
+        since: Instant,
+        at: Instant,
+    },
+    Done,
+}
+
+/// One frame of the summoning circle.
+pub(crate) struct Summoning {
+    pub(crate) circle: MagicCircle,
+    /// The moment the circle is drawn as.
+    pub(crate) at: Instant,
+    /// How far it has scattered, 0 to 1, once Copilot has appeared.
+    pub(crate) fade: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,6 +125,7 @@ pub(crate) struct Magic {
     pub(crate) animations: bool,
     pub(crate) circle: MagicCircle,
     pub(crate) phase: Phase,
+    pub(crate) summon: Summon,
     pub(crate) picker: Option<Picker>,
     toast: Option<(String, Instant)>,
     command_hint: bool,
@@ -113,6 +145,7 @@ impl Magic {
             animations,
             circle: MagicCircle::default(),
             phase: Phase::Idle,
+            summon: Summon::Done,
             picker: None,
             toast: None,
             command_hint: false,
@@ -202,6 +235,40 @@ impl Magic {
         );
     }
 
+    /// Starts the summoning circle, drawn while Copilot starts, when the circle is on and moves.
+    pub(crate) fn begin_summon(&mut self, now: Instant) {
+        if self.enabled && self.animations {
+            self.summon = Summon::Loading { since: now };
+        }
+    }
+
+    /// Copilot has drawn something: the summoning circle scatters.
+    pub(crate) fn summoned(&mut self, now: Instant) {
+        if let Summon::Loading { since } = self.summon {
+            self.summon = Summon::Scattering { since, at: now };
+        }
+    }
+
+    /// Whether Copilot is still starting behind the summoning circle.
+    pub(crate) fn loading(&self) -> bool {
+        self.enabled && matches!(self.summon, Summon::Loading { .. })
+    }
+
+    /// The summoning circle as it is drawn at `now`, if it shows.
+    pub(crate) fn summoning(&self, now: Instant) -> Option<Summoning> {
+        if !self.enabled {
+            return None;
+        }
+        let (since, at, fade) = match self.summon {
+            Summon::Loading { since } => (since, now, None),
+            Summon::Scattering { since, at } => (since, at, Some(faded(at, now))),
+            Summon::Done => return None,
+        };
+        let mut circle = MagicCircle::default();
+        circle.submit(SUMMON_TEXT, since);
+        Some(Summoning { circle, at, fade })
+    }
+
     /// Rows of the region above the child for a terminal `rows` tall.
     pub(crate) fn region_rows(&self, rows: u16, now: Instant) -> u16 {
         let room = rows.saturating_sub(MIN_CHILD_ROWS);
@@ -235,6 +302,7 @@ impl Magic {
             && self.animations
             && matches!(self.phase, Phase::Charging | Phase::Fading { .. });
         moving
+            || (self.enabled && self.summon != Summon::Done)
             || matches!(self.phase, Phase::Outlet { .. })
             || self.finish_at.is_some()
             || self.toast(now).is_some()
@@ -243,9 +311,7 @@ impl Magic {
     /// How far the fade has run, 0 to 1.
     pub(crate) fn fade(&self, now: Instant) -> f64 {
         match self.phase {
-            Phase::Fading { since, .. } => (now.saturating_duration_since(since).as_secs_f64()
-                / FADE_TIME.as_secs_f64())
-            .min(1.0),
+            Phase::Fading { since, .. } => faded(since, now),
             _ => 0.0,
         }
     }
@@ -265,6 +331,7 @@ impl Magic {
                     // The last circle never got back to idle, where the next style is drawn.
                     self.reroll();
                 }
+                self.summon = Summon::Done;
                 self.circle.finish();
                 self.circle.submit(&text, now);
                 self.phase = Phase::Charging;
@@ -392,6 +459,11 @@ impl Magic {
         {
             self.rest();
         }
+        if let Summon::Scattering { at, .. } = self.summon
+            && now.duration_since(at) >= FADE_TIME
+        {
+            self.summon = Summon::Done;
+        }
     }
 
     fn announce(&mut self, state: &str, now: Instant) {
@@ -503,10 +575,14 @@ impl Magic {
             Phase::Fading { since, .. } => Some(since + FADE_TIME),
             _ => None,
         };
-        let mut next = match (self.finish_at, ends) {
-            (Some(at), Some(end)) => Some(at.min(end)),
-            (at, end) => at.or(end),
+        let scattered = match self.summon {
+            Summon::Scattering { at, .. } => Some(at + FADE_TIME),
+            _ => None,
         };
+        let mut next = [self.finish_at, ends, scattered]
+            .into_iter()
+            .flatten()
+            .min();
         if let Some((_, until)) = &self.toast
             && now < *until
         {
@@ -1027,5 +1103,63 @@ mod tests {
         magic.command("on", 40, now);
         magic.set_command_hint(false);
         assert_eq!(magic.notice(now), magic.toast(now));
+    }
+
+    #[test]
+    fn a_summoning_circle_charges_until_copilot_draws_then_scatters() {
+        let start = Instant::now();
+        let mut magic = Magic::new(true, MagicStyle::Fire, true);
+        assert!(magic.summoning(start).is_none(), "only once begun");
+        magic.begin_summon(start);
+        assert!(magic.loading() && magic.animating(start));
+        assert_eq!(
+            magic.region_rows(40, start),
+            IDLE_ROWS,
+            "Copilot starts at the size it keeps"
+        );
+        let later = start + Duration::from_secs(3);
+        let loading = magic.summoning(later).unwrap();
+        assert_eq!((loading.at, loading.fade), (later, None));
+        assert_eq!(
+            loading.circle.elapsed(later),
+            Some(Duration::from_secs(3)),
+            "it charges from the launch"
+        );
+
+        let appeared = start + Duration::from_secs(4);
+        magic.summoned(appeared);
+        assert!(!magic.loading());
+        let half = magic.summoning(appeared + FADE_TIME / 2).unwrap();
+        assert_eq!(
+            half.at, appeared,
+            "it scatters as it was when Copilot appeared"
+        );
+        assert!((half.fade.unwrap() - 0.5).abs() < 1e-9);
+        assert_eq!(magic.deadline(appeared), Some(appeared + FADE_TIME));
+        magic.summoned(appeared + FADE_TIME / 2);
+        assert_eq!(
+            magic.summoning(appeared + FADE_TIME / 2).unwrap().at,
+            appeared,
+            "later output does not restart it"
+        );
+        magic.tick(appeared + FADE_TIME);
+        assert!(magic.summoning(appeared + FADE_TIME).is_none());
+        assert!(!magic.animating(appeared + FADE_TIME));
+    }
+
+    #[test]
+    fn no_summoning_without_the_circle_or_motion_and_a_prompt_ends_it() {
+        let now = Instant::now();
+        for (enabled, animations) in [(false, true), (true, false)] {
+            let mut magic = Magic::new(enabled, MagicStyle::Classic, animations);
+            magic.begin_summon(now);
+            assert!(!magic.loading() && magic.summoning(now).is_none());
+            assert!(!magic.animating(now));
+        }
+        let mut magic = Magic::new(true, MagicStyle::Classic, true);
+        magic.begin_summon(now);
+        magic.summoned(now);
+        charged(&mut magic, now);
+        assert!(magic.summoning(now).is_none(), "a turn's circle takes over");
     }
 }

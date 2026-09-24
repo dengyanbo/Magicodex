@@ -9,6 +9,7 @@ use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use unicode_width::UnicodeWidthChar;
+use unicode_width::UnicodeWidthStr;
 
 use crate::circle::dissolve;
 use crate::circle::sides::SideView;
@@ -215,6 +216,92 @@ fn scene(magic: &Magic, area: Rect, buf: &mut Buffer, at: Instant) {
     }
 }
 
+/// Columns kept clear on each side of anything drawn: the summoning circle never touches
+/// Copilot's text, nor the spaces between its words.
+const HALO: usize = 2;
+
+/// Cells of `area` in `buf` that are empty and at least [`HALO`] columns from anything drawn.
+fn open_cells(buf: &Buffer, area: Rect) -> Vec<bool> {
+    let (width, height) = (usize::from(area.width), usize::from(area.height));
+    let mut blank = vec![false; width * height];
+    for row in 0..height {
+        // Columns still covered by a wide character to the left.
+        let mut covered: usize = 0;
+        for column in 0..width {
+            let cell = &buf[(area.x + column as u16, area.y + row as u16)];
+            let symbol = cell.symbol();
+            let visible = Modifier::REVERSED | Modifier::UNDERLINED | Modifier::CROSSED_OUT;
+            blank[row * width + column] = covered == 0
+                && symbol.trim().is_empty()
+                && cell.bg == Color::Reset
+                && !cell.modifier.intersects(visible);
+            covered = covered
+                .saturating_sub(1)
+                .max(symbol.width().saturating_sub(1));
+        }
+    }
+    (0..width * height)
+        .map(|index| {
+            let (row, column) = (index / width, index % width);
+            let from = column.saturating_sub(HALO);
+            let to = (column + HALO).min(width - 1);
+            (from..=to).all(|column| blank[row * width + column])
+        })
+        .collect()
+}
+
+/// While Copilot starts, a circle charges over the empty screen; when Copilot appears, it
+/// scatters. Only cells [`open_cells`] finds are drawn, so nothing of Copilot's is covered.
+pub(crate) fn summon(magic: &Magic, area: Rect, buf: &mut Buffer, now: Instant) {
+    let Some(summoning) = magic.summoning(now) else {
+        return;
+    };
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let mut art = Buffer::empty(area);
+    MagicView {
+        circle: &summoning.circle,
+        style: magic.shown_style(),
+        animations_enabled: true,
+        scene: MagicScene::Live,
+    }
+    .render_at(area, &mut art, summoning.at);
+    if let Some(progress) = summoning.fade {
+        let mut dust = Buffer::empty(area);
+        let center = (
+            f64::from(area.x) * 2.0 + f64::from(area.width),
+            f64::from(area.y) * 4.0 + f64::from(area.height) * 2.0,
+        );
+        dissolve::draw(&art, &mut dust, center, progress, true);
+        art = dust;
+    }
+    let open = open_cells(buf, area);
+    let width = usize::from(area.width);
+    for row in 0..area.height {
+        let mut column = 0;
+        while column < area.width {
+            let cell = &art[(area.x + column, area.y + row)];
+            let symbol = cell.symbol();
+            let cells = symbol.width().max(1) as u16;
+            let fits = (column..column + cells).all(|column| {
+                column < area.width && open[usize::from(row) * width + usize::from(column)]
+            });
+            if fits && !symbol.trim().is_empty() {
+                let style = cell.style();
+                buf.set_stringn(
+                    area.x + column,
+                    area.y + row,
+                    symbol,
+                    usize::from(cells),
+                    style,
+                );
+            }
+            column += cells;
+        }
+    }
+}
+
 /// Draws the magic region: the circle, or the picker, and any notice.
 pub(crate) fn region(magic: &Magic, area: Rect, buf: &mut Buffer, now: Instant) {
     if area.height == 0 {
@@ -222,7 +309,7 @@ pub(crate) fn region(magic: &Magic, area: Rect, buf: &mut Buffer, now: Instant) 
     }
     if let Some(picker_state) = magic.picker {
         picker(magic, picker_state.index, area, buf, now);
-    } else if magic.enabled && area.height >= crate::magic::IDLE_ROWS {
+    } else if magic.enabled && area.height >= crate::magic::IDLE_ROWS && !magic.loading() {
         if let Phase::Fading { since, .. } = magic.phase {
             // The circle ends as it was when it stopped, dimming and scattering from its centre.
             let mut frame = Buffer::empty(area);
@@ -435,5 +522,76 @@ mod tests {
                 assert_eq!(buf[(x, y)], plain[(x, y)], "emblem cell ({x}, {y})");
             }
         }
+    }
+
+    fn braille_rows(rows: &[String]) -> Vec<usize> {
+        let braille = |row: &String| {
+            row.chars()
+                .filter(|c| ('\u{2801}'..='\u{28ff}').contains(c))
+                .count()
+        };
+        (0..rows.len())
+            .filter(|y| braille(&rows[*y]) >= 2)
+            .collect()
+    }
+
+    #[test]
+    fn a_summoning_circle_fills_the_empty_screen_and_never_covers_copilot() {
+        let area = Rect::new(0, 0, 120, 40);
+        let draw = |magic: &Magic, child: &ChildScreen, at: Instant| {
+            let mut buf = Buffer::empty(area);
+            region(magic, Rect::new(0, 0, 120, 5), &mut buf, at);
+            super::child(child, Rect::new(0, 5, 120, 35), &mut buf);
+            summon(magic, area, &mut buf, at);
+            text(&buf)
+        };
+        let start = Instant::now();
+        let mut magic = Magic::new(true, MagicStyle::Classic, true);
+        magic.begin_summon(start);
+        let blank = ChildScreen::new(35, 120);
+        let early = draw(&magic, &blank, start + Duration::from_millis(1500));
+        let later = draw(&magic, &blank, start + Duration::from_secs(4));
+        assert!(
+            early[..5].iter().all(|row| row.is_empty()),
+            "no idle emblem while summoning: {early:#?}"
+        );
+        assert!(
+            braille_rows(&early).len() > 8,
+            "a whole circle, not the emblem: {early:#?}"
+        );
+        assert!(
+            braille_rows(&later).len() > braille_rows(&early).len(),
+            "it grows while Copilot starts"
+        );
+        assert!(later.join("\n").contains("召唤"), "{later:#?}");
+
+        let words = "Do you trust the files in this folder?";
+        let mut copilot = ChildScreen::new(35, 120);
+        copilot.process(words.as_bytes());
+        let appeared = start + Duration::from_secs(4);
+        magic.summoned(appeared);
+        let scattering = draw(&magic, &copilot, appeared + Duration::from_millis(400));
+        assert!(
+            scattering[..5].iter().any(|row| row.contains('✦')),
+            "the emblem is back: {scattering:#?}"
+        );
+        let rest = scattering[5]
+            .strip_prefix(words)
+            .expect("Copilot's words stay whole");
+        assert!(
+            rest.chars().take(HALO).all(|c| c == ' '),
+            "and keep a margin: {:?}",
+            scattering[5]
+        );
+        assert!(
+            braille_rows(&scattering).iter().any(|row| *row > 6),
+            "the circle scatters over the empty screen: {scattering:#?}"
+        );
+        let gone = draw(&magic, &copilot, appeared + Duration::from_secs(2));
+        assert!(
+            braille_rows(&gone).iter().all(|row| *row < 5),
+            "only the emblem remains: {gone:#?}"
+        );
+        assert_eq!(gone[5], words);
     }
 }

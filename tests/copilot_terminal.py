@@ -380,6 +380,39 @@ def run_turn(term, frames, prefix):
     return started, (early, early_circle), (later, later_circle), sides, rows
 
 
+def check_summon(wrapper, base, work, port, windows_terminal, frames):
+    """While Copilot starts, a circle charges over the empty screen; when Copilot appears it
+    scatters, keeping off Copilot's text. A stand-in that prints after 3 s makes this exact."""
+    words = "Copilot is ready, trust this folder?"
+    stand_in = base / "slow-copilot.cmd"
+    stand_in.write_text(f"@echo off\r\nping -n 4 127.0.0.1 >nul\r\necho {words}\r\nping -n 6 127.0.0.1 >nul\r\n",
+                        encoding="ascii")
+    env = copilot_env(fresh_home(base, "home-summon", work), port, windows_terminal)
+    env["MAGICOPILOT_COPILOT"] = str(stand_in)
+    term = Terminal([str(wrapper)], env, work)
+    try:
+        term.wait(lambda r: len(braille_rows(r)) > 8, timeout=5, what="the summoning circle")
+        first = term.rows()
+        time.sleep(1.2)
+        second = term.rows()
+        assert not any(row.strip() for row in second[:5]), "no idle emblem while summoning:\n" + "\n".join(second)
+        assert second != first, "the summoning circle moves"
+        assert len(braille_rows(second)) >= len(braille_rows(first)), "and grows"
+        assert "召唤" in "".join(second), "the summoning text orbits it:\n" + "\n".join(second)
+        frames.append(("00-summon", "Copilot 启动中：召唤法阵", term.cells()))
+        rows = term.wait(lambda r: any(words in row for row in r), timeout=8, what="the stand-in's words")
+        frames.append(("00-summon-scatter", "Copilot 出现：法阵化为光尘散去", term.cells()))
+        line = next(row for row in rows if words in row)
+        assert line[line.index(words) + len(words):][:2].strip() == "", "dust keeps off the words: " + repr(line)
+        dust = [y for y in braille_rows(rows) if y > 5]
+        assert dust, "the circle scatters instead of vanishing:\n" + "\n".join(rows)
+        term.wait(lambda r: braille_rows(r) and max(braille_rows(r)) < 5, timeout=4,
+                  what="only the idle emblem after the summoning")
+        return {"rows": len(braille_rows(second)), "dust_rows": len(dust)}
+    finally:
+        term.close(timeout=10)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("wrapper", type=Path)
@@ -396,10 +429,20 @@ def main():
     work.mkdir()
     (work / "README.md").write_text("# Magic fixture\n", encoding="utf-8")
     try:
+        results["summon"] = check_summon(args.wrapper.resolve(), base, work, server.server_port,
+                                         args.windows_terminal, frames)
         home = fresh_home(base, "home", work)
         env = copilot_env(home, server.server_port, args.windows_terminal)
         term = Terminal([str(args.wrapper.resolve())], env, work)
         try:
+            time.sleep(1.5)
+            rows = term.rows()
+            if tab_row(rows) is None:
+                # Copilot is still starting: the summoning circle stands in for it.
+                assert len(braille_rows(rows)) > 8 and not any(row.strip() for row in rows[:5]), \
+                    "summoning circle while Copilot starts:\n" + "\n".join(rows)
+                frames.append(("00-summon-copilot", "Copilot 启动中（真实 Copilot）", term.cells()))
+                results["summon_with_copilot"] = True
             rows = term.wait(lambda r: tab_row(r) is not None and braille_rows(r), timeout=40, what="Copilot below the idle circle")
             assert "Magic circle on" in rows[0], rows[0]
             term.dismiss_dialogs(settle=8.0)
@@ -585,7 +628,8 @@ def main():
         leaks = [json.dumps(r, ensure_ascii=False) for r in Fixture.requests
                  if re.search(r"/magic(?:\s|\"|$)", json.dumps(r, ensure_ascii=False))]
         assert not leaks, "/magic leaked: " + "; ".join(leak[:300] for leak in leaks)
-        sessions = list((home / "session-state").iterdir())
+        # Copilot may also keep a hidden .session-operation-locks folder there.
+        sessions = [p for p in (home / "session-state").iterdir() if not p.name.startswith(".")]
         results["sessions"] = len(sessions)
 
         if args.baseline:

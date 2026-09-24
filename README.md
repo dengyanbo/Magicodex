@@ -22,6 +22,7 @@ Works with **GitHub Copilot CLI** and **OpenAI Codex CLI**. The original program
 ## Features
 
 - **Grows while you wait**: before you type, there's only a small circle 5 rows tall. It grows as soon as you submit, then adds another layer of detail every few seconds until the model first replies.
+- **Summoned at startup** (Copilot): while Copilot CLI is still loading, a summoning circle spreads across the empty screen with "召唤 GitHub Copilot CLI" orbiting it, and scatters into dust once Copilot appears.
 - **Words woven into the circle**: your prompt orbits the outer ring and intermediate replies orbit the inner ring. The model's reasoning is never shown.
 - **Answers born from the circle**: when the final reply begins, the circle freezes, light shines down from its center, and the reply appears below the circle.
 - **10 magic circles**: Classic, Wind, Fire, Water, Thunder, Earth, Holy, Dark, Eerie and Tech. Each has its own shape, motion, text path, idle emblem and outlet, not just a different color. Preview and pick one with `/magic list`, or let `/magic random` cast a different one every turn.
@@ -232,6 +233,7 @@ Building from source, the patch structure, testing and the full verification rec
 ## 特点
 
 - **跟着等待成长**：输入前只有一个 5 行高的小法阵；提交后立刻变大，之后每隔几秒多画一层细节，直到模型第一次回复。
+- **启动时召唤**（Copilot 版）：Copilot CLI 还在加载时，空白的屏幕上会展开一座召唤法阵，“召唤 GitHub Copilot CLI”绕着它旋转；Copilot 一出现，它就化为光尘散去。
 - **文字织进法阵**：prompt 沿外圈环绕，中间回复沿内圈环绕。不显示模型的思考过程（reasoning）。
 - **回答从法阵中诞生**：最终回复开始时，法阵定格，光从阵心向下投出，正文从法阵下方出现。
 - **10 种法阵**：经典、风、火、水、雷、土、神圣、黑暗、诡异、科技。外形、动态、文字走向、待机小阵和出口各不相同，不只是换颜色。用 `/magic list` 边看边选，或者用 `/magic 随机` 让每个回合换一种。
