@@ -24,7 +24,7 @@ Works with **GitHub Copilot CLI** and **OpenAI Codex CLI**. The original program
 - **Grows while you wait**: before you type, there's only a small circle 5 rows tall. It grows as soon as you submit, then adds another layer of detail every few seconds until the model first replies.
 - **Words woven into the circle**: your prompt orbits the outer ring and intermediate replies orbit the inner ring. The model's reasoning is never shown.
 - **Answers born from the circle**: when the final reply begins, the circle freezes, light shines down from its center, and the reply appears below the circle.
-- **10 magic circles**: Classic, Wind, Fire, Water, Thunder, Earth, Holy, Dark, Eerie and Tech. Each has its own shape, motion, text path, idle emblem and outlet, not just a different color. Preview and pick one with `/magic list`.
+- **10 magic circles**: Classic, Wind, Fire, Water, Thunder, Earth, Holy, Dark, Eerie and Tech. Each has its own shape, motion, text path, idle emblem and outlet, not just a different color. Preview and pick one with `/magic list`, or let `/magic random` cast a different one every turn.
 - **Stays out of the way**: `/magic` commands are handled locally and never sent to the model. The animation makes no extra model calls and uses no quota.
 - **Beside the circle**: while it charges, the left page of a grimoire lists the agent's tool calls as spells (Tracking for searches, Insight for reading, Ritual for shell commands, Summon Familiar for subagents…) and the right page shows the elapsed time, the charge stage and the counts. Two pillars in the circle's own style light up layer by layer, rune particles drift toward the circle, and a small cat familiar chants and runs errands (in magicopilot it also cheers when the answer arrives).
 
@@ -96,7 +96,7 @@ magicopilot --resume                # resume an earlier session
 magicopilot --magic-style thunder   # start with the Thunder circle
 ```
 
-The circle is on by default and drawn above Copilot's interface: 5 rows when idle, 21 while casting and 24 while releasing the answer, and Copilot always keeps at least 14 rows. When Copilot asks for permission, the circle shrinks to make room; in windows shorter than 19 rows it hides automatically. What appears beside the charging circle depends on the width: pillars and particles from 65 columns, the grimoire pages from 89, and argument details and the familiar from 109. More options are described in [copilot/README.md](copilot/README.md) (in Chinese).
+The circle is on by default and drawn above Copilot's interface: 5 rows when idle, 21 while casting and 24 while releasing the answer, and Copilot always keeps at least 14 rows. After the answer, the settled circle stays for 15 seconds, then dims and scatters into dust before the idle emblem returns (an interrupted turn fades the same way). When Copilot asks for permission, the circle shrinks to make room; in windows shorter than 19 rows it hides automatically. What appears beside the charging circle depends on the width: pillars and particles from 65 columns, the grimoire pages from 89, and argument details and the familiar from 109. More options are described in [copilot/README.md](copilot/README.md) (in Chinese).
 
 ### Codex CLI: `magicodex`
 
@@ -117,6 +117,7 @@ In either version, type these commands **in the input box** and press Enter:
 | `/magic on` / `/magic off` | Shows / hides the circle |
 | `/magic list` (or just `/magic`) | Opens the list of styles: ↑↓ previews as you move, Enter selects, number keys select directly, Esc cancels |
 | `/magic <style>` | Switches directly, e.g. `/magic fire` or `/magic 火` |
+| `/magic random` (or `/magic 随机`) | Casts a different circle every turn, never the same one twice in a row; also the last item of the list |
 
 These commands are handled locally and never sent to the model. Settings only last for the current run and go back to the defaults when you restart. In Codex, don't pass `/magic on` as a command-line argument, or it will be sent to the model as a prompt.
 
@@ -233,7 +234,7 @@ Building from source, the patch structure, testing and the full verification rec
 - **跟着等待成长**：输入前只有一个 5 行高的小法阵；提交后立刻变大，之后每隔几秒多画一层细节，直到模型第一次回复。
 - **文字织进法阵**：prompt 沿外圈环绕，中间回复沿内圈环绕。不显示模型的思考过程（reasoning）。
 - **回答从法阵中诞生**：最终回复开始时，法阵定格，光从阵心向下投出，正文从法阵下方出现。
-- **10 种法阵**：经典、风、火、水、雷、土、神圣、黑暗、诡异、科技。外形、动态、文字走向、待机小阵和出口各不相同，不只是换颜色。用 `/magic list` 边看边选。
+- **10 种法阵**：经典、风、火、水、雷、土、神圣、黑暗、诡异、科技。外形、动态、文字走向、待机小阵和出口各不相同，不只是换颜色。用 `/magic list` 边看边选，或者用 `/magic 随机` 让每个回合换一种。
 - **不打扰原程序**：`/magic` 命令在本机处理，不会发给模型；动画不额外调用模型，也不消耗额度。
 - **法阵两侧**：蓄力时，左页“咏唱记录”把模型的工具调用写成法术（搜索是寻踪术、读文件是洞察之眼、终端命令是召唤仪式、子代理是召唤使魔……），右页显示咏唱时长、施法阶段和各项计数；两根与法阵同款的法阵柱随层数逐层点亮，符文粒子向阵心汇聚，小猫使魔会跟着吟唱、跑腿（magicopilot 中回答到来时它还会欢呼）。
 
@@ -305,7 +306,7 @@ magicopilot --resume           # 恢复之前的会话
 magicopilot --magic-style 雷   # 以雷系法阵启动
 ```
 
-法阵默认开启，画在 Copilot 界面的上方：待机时占 5 行，施法时 21 行，释放回答时 24 行，Copilot 始终至少保留 14 行。Copilot 请求权限确认时，法阵会缩小让出空间；窗口低于 19 行时法阵自动隐藏。蓄力时两侧显示什么取决于窗口宽度：65 列起有法阵柱和粒子，89 列起有两页魔导书，109 列起再加上参数摘要和使魔。更多参数见 [copilot/README.md](copilot/README.md)。
+法阵默认开启，画在 Copilot 界面的上方：待机时占 5 行，施法时 21 行，释放回答时 24 行，Copilot 始终至少保留 14 行。回答之后，定格的法阵保留 15 秒，然后暗淡下去、向外扩散成点尘，再回到待机小阵（被中断的回合也这样消散）。Copilot 请求权限确认时，法阵会缩小让出空间；窗口低于 19 行时法阵自动隐藏。蓄力时两侧显示什么取决于窗口宽度：65 列起有法阵柱和粒子，89 列起有两页魔导书，109 列起再加上参数摘要和使魔。更多参数见 [copilot/README.md](copilot/README.md)。
 
 ### Codex CLI：`magicodex`
 
@@ -326,6 +327,7 @@ magicopilot --magic-style 雷   # 以雷系法阵启动
 | `/magic on` / `/magic off` | 显示 / 隐藏法阵 |
 | `/magic list`（或只输入 `/magic`） | 打开法阵类型列表：↑↓ 移动时实时预览，Enter 选用，数字键直接选，Esc 取消 |
 | `/magic <类型>` | 直接切换，例如 `/magic fire`、`/magic 火` |
+| `/magic 随机`（或 `/magic random`） | 每个回合随机换一种法阵，不会连续两次相同；也是列表的最后一项 |
 
 这些命令只在本机处理，不会发给模型。设置只在本次运行中有效，重新启动后恢复默认。在 Codex 里不要把 `/magic on` 写在命令行参数里，那样它会被当成发给模型的 prompt。
 

@@ -98,6 +98,16 @@ impl MagicStyle {
             .find(|style| style.id().eq_ignore_ascii_case(text) || style.name() == text)
     }
 
+    /// Another style than this one, picked by `roll`, a random number.
+    pub(crate) fn other(self, roll: u64) -> Self {
+        let count = Self::ALL.len() as u64;
+        let index = self as u64;
+        Self::ALL
+            .get(((index + 1 + roll % (count - 1)) % count) as usize)
+            .copied()
+            .unwrap_or_default()
+    }
+
     /// Elemental styles are an explicit opt-in, so they may use ANSI colours beyond Codex's
     /// magenta and cyan. They stay on the 16 ANSI colours so terminal themes still choose the
     /// shades; the default classic style keeps the Codex palette.
@@ -235,11 +245,42 @@ impl Palette {
     }
 }
 
+/// What `/magic <style>` asks for: one style, or a different one drawn for every turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MagicChoice {
+    Style(MagicStyle),
+    Random,
+}
+
+impl MagicChoice {
+    const RANDOM_ID: &str = "random";
+    const RANDOM_NAME: &str = "随机";
+    pub(crate) const RANDOM_DESCRIPTION: &str = "每个回合随机换一种法阵，不与上一回合重复";
+
+    /// Matches a style, or `random` (any case) and its Chinese name.
+    pub(crate) fn parse(text: &str) -> Option<Self> {
+        let text = text.trim();
+        if text.eq_ignore_ascii_case(Self::RANDOM_ID) || text == Self::RANDOM_NAME {
+            return Some(Self::Random);
+        }
+        MagicStyle::parse(text).map(Self::Style)
+    }
+
+    pub(crate) fn label(self) -> String {
+        match self {
+            Self::Style(style) => style.label(),
+            Self::Random => format!("{} {}", Self::RANDOM_ID, Self::RANDOM_NAME),
+        }
+    }
+}
+
 /// Magic display settings shared by every chat widget of one app run. Nothing is persisted.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct MagicSettings {
     enabled: Arc<AtomicBool>,
     style: Arc<AtomicU8>,
+    /// Whether every turn draws another style; `style` holds the current draw.
+    random: Arc<AtomicBool>,
 }
 
 impl MagicSettings {
@@ -258,8 +299,58 @@ impl MagicSettings {
             .unwrap_or_default()
     }
 
+    /// Keeps one style, ending a random choice.
     pub(crate) fn set_style(&self, style: MagicStyle) {
         self.style.store(style as u8, Ordering::Relaxed);
+        self.random.store(false, Ordering::Relaxed);
+    }
+
+    pub(crate) fn is_random(&self) -> bool {
+        self.random.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn choice(&self) -> MagicChoice {
+        if self.is_random() {
+            MagicChoice::Random
+        } else {
+            MagicChoice::Style(self.style())
+        }
+    }
+
+    /// Keeps `choice`; turning random on draws a style other than the current one.
+    pub(crate) fn set_choice(&self, choice: MagicChoice) {
+        match choice {
+            MagicChoice::Style(style) => self.set_style(style),
+            MagicChoice::Random => {
+                if !self.random.swap(true, Ordering::Relaxed) {
+                    self.draw();
+                }
+            }
+        }
+    }
+
+    /// The random choice, with a fresh draw to preview.
+    pub(crate) fn preview_random(&self) {
+        self.random.store(true, Ordering::Relaxed);
+        self.draw();
+    }
+
+    /// Puts back a style and choice seen earlier, as when a preview is cancelled.
+    pub(crate) fn restore(&self, style: MagicStyle, random: bool) {
+        self.set_style(style);
+        self.random.store(random, Ordering::Relaxed);
+    }
+
+    /// Draws the next turn's style when the choice is random.
+    pub(crate) fn reroll(&self) {
+        if self.is_random() {
+            self.draw();
+        }
+    }
+
+    fn draw(&self) {
+        let next = self.style().other(rand::random::<u64>());
+        self.style.store(next as u8, Ordering::Relaxed);
     }
 }
 

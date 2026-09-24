@@ -1,0 +1,529 @@
+--- a/codex-rs/tui/src/app/event_dispatch.rs
++++ b/codex-rs/tui/src/app/event_dispatch.rs
+@@ -224,8 +224,8 @@
+             AppEvent::MagicStylePreviewed => {
+                 tui.frame_requester().schedule_frame();
+             }
+-            AppEvent::MagicStyleSelected(style) => {
+-                self.chat_widget.apply_magic_style(style);
++            AppEvent::MagicStyleSelected(choice) => {
++                self.chat_widget.apply_magic_choice(choice);
+             }
+             AppEvent::ClearUiAndSubmitUserMessage { text } => {
+                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
+--- a/codex-rs/tui/src/app_event.rs
++++ b/codex-rs/tui/src/app_event.rs
+@@ -417,8 +417,8 @@
+     /// Redraw after the `/magic list` highlight changed the shared style.
+     MagicStylePreviewed,
+ 
+-    /// Keep a magic circle style chosen in the `/magic list` picker and show the circle.
+-    MagicStyleSelected(crate::magic_style::MagicStyle),
++    /// Keep a magic circle choice made in the `/magic list` picker and show the circle.
++    MagicStyleSelected(crate::magic_style::MagicChoice),
+ 
+     /// Clear the current context, start a fresh session, and submit an initial user message.
+     ///
+--- a/codex-rs/tui/src/chatwidget/magic.rs
++++ b/codex-rs/tui/src/chatwidget/magic.rs
+@@ -2,7 +2,7 @@
+ 
+ use super::*;
+ use crate::magic_sides::spells;
+-use crate::magic_style::MagicStyle;
++use crate::magic_style::MagicChoice;
+ use codex_app_server_protocol::CollabAgentTool;
+ use codex_app_server_protocol::CollabAgentToolCallStatus;
+ use codex_app_server_protocol::CommandAction;
+@@ -22,8 +22,8 @@
+                 self.request_redraw();
+             }
+             "on" | "off" => self.set_magic_display(args == "on"),
+-            _ => match MagicStyle::parse(args) {
+-                Some(style) => self.apply_magic_style(style),
++            _ => match MagicChoice::parse(args) {
++                Some(choice) => self.apply_magic_choice(choice),
+                 None => self.push_magic_notice(Box::new(history_cell::new_error_event(
+                     crate::magic_circle::USAGE.to_string(),
+                 ))),
+@@ -31,9 +31,9 @@
+         }
+     }
+ 
+-    /// Keeps `style` for the rest of the app run and shows the circle.
+-    pub(crate) fn apply_magic_style(&mut self, style: MagicStyle) {
+-        self.magic.set_style(style);
++    /// Keeps `choice` for the rest of the app run and shows the circle.
++    pub(crate) fn apply_magic_choice(&mut self, choice: MagicChoice) {
++        self.magic.set_choice(choice);
+         self.set_magic_display(/*enabled*/ true);
+     }
+ 
+@@ -44,7 +44,7 @@
+         let state = if enabled { "on" } else { "off" };
+         self.push_magic_notice(Box::new(history_cell::new_info_event(
+             format!("Magic circle {state}"),
+-            Some(format!("· {}", self.magic.style().label())),
++            Some(format!("· {}", self.magic.choice().label())),
+         )));
+     }
+ 
+--- a/codex-rs/tui/src/chatwidget/tests/magic_tests.rs
++++ b/codex-rs/tui/src/chatwidget/tests/magic_tests.rs
+@@ -1,4 +1,5 @@
+ use super::*;
++use crate::magic_style::MagicChoice;
+ use crate::magic_style::MagicStyle;
+ use pretty_assertions::assert_eq;
+ 
+@@ -292,11 +293,11 @@
+     assert!(chat.magic_output.emitted);
+ }
+ 
+-fn selected_style(
++fn selected_choice(
+     events: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+-) -> Option<MagicStyle> {
++) -> Option<MagicChoice> {
+     std::iter::from_fn(|| events.try_recv().ok()).find_map(|event| match event {
+-        AppEvent::MagicStyleSelected(style) => Some(style),
++        AppEvent::MagicStyleSelected(choice) => Some(choice),
+         _ => None,
+     })
+ }
+@@ -329,7 +330,7 @@
+         !chat.magic.enabled(),
+         "cancelling does not turn the circle on"
+     );
+-    assert_eq!(selected_style(&mut events), None);
++    assert_eq!(selected_choice(&mut events), None);
+     while let Ok(op) = ops.try_recv() {
+         assert!(
+             !matches!(op, Op::UserTurn { .. }),
+@@ -353,11 +354,103 @@
+     chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+     assert!(!chat.bottom_pane.has_active_view());
+-    let style = selected_style(&mut events).expect("Enter selects the highlighted style");
+-    assert_eq!(style, MagicStyle::Tech);
+-    chat.apply_magic_style(style);
++    let choice = selected_choice(&mut events).expect("Enter selects the highlighted style");
++    assert_eq!(choice, MagicChoice::Style(MagicStyle::Tech));
++    chat.apply_magic_choice(choice);
+     assert!(chat.magic.enabled());
+     assert_eq!(chat.magic.style(), MagicStyle::Tech);
++}
++
++#[tokio::test]
++async fn magic_list_offers_the_random_choice_last() {
++    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    let highlight_random = |chat: &mut ChatWidget| {
++        chat.handle_magic_command("list");
++        for _ in MagicStyle::ALL {
++            chat.handle_key_event(KeyEvent::from(KeyCode::Down));
++        }
++    };
++    highlight_random(&mut chat);
++    assert!(
++        chat.magic.is_random(),
++        "the highlight previews the random choice"
++    );
++    assert_ne!(
++        chat.magic.style(),
++        MagicStyle::Classic,
++        "with another style"
++    );
++    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
++    assert_eq!(chat.magic.choice(), MagicChoice::Style(MagicStyle::Classic));
++    assert_eq!(selected_choice(&mut events), None);
++
++    highlight_random(&mut chat);
++    let preview = chat.magic.style();
++    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
++    let choice = selected_choice(&mut events).expect("Enter selects the random choice");
++    assert_eq!(choice, MagicChoice::Random);
++    chat.apply_magic_choice(choice);
++    assert_eq!(
++        (chat.magic.choice(), chat.magic.style()),
++        (MagicChoice::Random, preview),
++        "the previewed draw is kept"
++    );
++    assert!(chat.magic.enabled());
++    chat.handle_magic_command("list");
++    let popup = render_bottom_popup(&chat, /*width*/ 120);
++    let current = popup
++        .lines()
++        .find(|line| line.contains("(current)"))
++        .unwrap_or_default();
++    assert!(current.contains("11. random"), "{popup}");
++}
++
++#[tokio::test]
++async fn magic_random_draws_another_style_for_every_turn() {
++    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++    chat.thread_id = Some(ThreadId::new());
++    chat.handle_magic_command("随机");
++    let notices = drain_insert_history(&mut events)
++        .iter()
++        .map(|lines| lines_to_single_string(lines))
++        .collect::<Vec<_>>();
++    assert!(
++        notices.len() == 1
++            && notices[0].contains("Magic circle on")
++            && notices[0].contains("random 随机"),
++        "{notices:?}"
++    );
++    assert_eq!(chat.magic.choice(), MagicChoice::Random);
++    assert_ne!(
++        chat.magic.style(),
++        MagicStyle::Classic,
++        "turning random on draws another style"
++    );
++    let mut seen = vec![chat.magic.style()];
++    for turn in 0..30 {
++        let id = format!("turn-{turn}");
++        let before = chat.magic.style();
++        handle_turn_started(&mut chat, &id);
++        assert_eq!(
++            chat.magic.style(),
++            before,
++            "the turn casts the style drawn for it"
++        );
++        handle_turn_completed(&mut chat, &id, /*duration_ms*/ None);
++        assert_ne!(chat.magic.style(), before, "{id} drew the same style again");
++        seen.push(chat.magic.style());
++    }
++    seen.sort_by_key(|style| *style as u8);
++    seen.dedup();
++    assert!(seen.len() >= 6, "30 turns drew only {seen:?}");
++    chat.handle_magic_command("fire");
++    handle_turn_started(&mut chat, "fixed");
++    handle_turn_completed(&mut chat, "fixed", /*duration_ms*/ None);
++    assert_eq!(
++        chat.magic.choice(),
++        MagicChoice::Style(MagicStyle::Fire),
++        "a chosen style stays"
++    );
+ }
+ 
+ #[tokio::test]
+--- a/codex-rs/tui/src/chatwidget/turn_runtime.rs
++++ b/codex-rs/tui/src/chatwidget/turn_runtime.rs
+@@ -32,6 +32,10 @@
+     /// both the agent turn lifecycle and MCP startup lifecycle.
+     pub(super) fn update_task_running_state(&mut self) {
+         if !self.turn_lifecycle.agent_turn_running && !self.input_queue.user_turn_pending_start {
++            if self.magic_circle.is_active() {
++                // Back to idle: a random choice draws the next turn's style now.
++                self.magic.reroll();
++            }
+             self.magic_circle.finish();
+         }
+         self.bottom_pane.set_task_running(
+--- a/codex-rs/tui/src/magic_circle.rs
++++ b/codex-rs/tui/src/magic_circle.rs
+@@ -21,7 +21,7 @@
+ use crate::magic_styles::LAYER_TIMES;
+ use crate::render::renderable::Renderable;
+ 
+-pub(crate) const USAGE: &str = "Usage: /magic on|off|list|<style>";
++pub(crate) const USAGE: &str = "Usage: /magic on|off|list|random|<style>";
+ pub(crate) const CIRCLE_ROWS: u16 = 21;
+ /// Rows below an outlet circle for the emission that leads into the answer.
+ pub(crate) const OUTLET_ROWS: u16 = 3;
+--- a/codex-rs/tui/src/magic_picker.rs
++++ b/codex-rs/tui/src/magic_picker.rs
+@@ -1,7 +1,9 @@
+-//! The `/magic list` picker: every style, with a preview of the highlighted one.
++//! The `/magic list` picker: every style and the random choice, with a preview of the
++//! highlighted one.
+ //!
+-//! Moving the highlight previews the style everywhere the circle is shown; Enter keeps it and
+-//! turns the circle on, Esc restores the previous style.
++//! Moving the highlight previews the style everywhere the circle is shown (the random choice
++//! previews a fresh draw); Enter keeps it and turns the circle on, Esc restores the previous
++//! style.
+ 
+ use std::time::Duration;
+ use std::time::Instant;
+@@ -18,6 +20,7 @@
+ use crate::magic_circle::MagicCircle;
+ use crate::magic_circle::MagicScene;
+ use crate::magic_circle::MagicView;
++use crate::magic_style::MagicChoice;
+ use crate::magic_style::MagicSettings;
+ use crate::magic_style::MagicStyle;
+ use crate::render::renderable::Renderable;
+@@ -50,16 +53,26 @@
+ 
+ pub(crate) fn picker_params(settings: &MagicSettings) -> SelectionViewParams {
+     let original = settings.style();
+-    let items = MagicStyle::ALL
++    let original_random = settings.is_random();
++    let choices = MagicStyle::ALL
+         .into_iter()
+-        .map(|style| SelectionItem {
+-            name: style.label(),
+-            description: Some(style.description().to_string()),
+-            is_current: style == original,
++        .map(MagicChoice::Style)
++        .chain([MagicChoice::Random]);
++    let items = choices
++        .map(|choice| SelectionItem {
++            name: choice.label(),
++            description: Some(
++                match choice {
++                    MagicChoice::Style(style) => style.description(),
++                    MagicChoice::Random => MagicChoice::RANDOM_DESCRIPTION,
++                }
++                .to_string(),
++            ),
++            is_current: choice == settings.choice(),
+             dismiss_on_select: true,
+-            search_value: Some(style.label()),
++            search_value: Some(choice.label()),
+             actions: vec![Box::new(move |tx: &AppEventSender| {
+-                tx.send(AppEvent::MagicStyleSelected(style));
++                tx.send(AppEvent::MagicStyleSelected(choice));
+             })],
+             ..Default::default()
+         })
+@@ -77,7 +90,14 @@
+         subtitle: Some("移动即预览 · Enter 选用并开启 · Esc 恢复原样式".to_string()),
+         footer_hint: Some(standard_popup_hint_line()),
+         items,
+-        initial_selected_idx: MagicStyle::ALL.iter().position(|style| *style == original),
++        initial_selected_idx: Some(if original_random {
++            MagicStyle::ALL.len()
++        } else {
++            MagicStyle::ALL
++                .iter()
++                .position(|style| *style == original)
++                .unwrap_or(0)
++        }),
+         side_content: Box::new(StylePreview {
+             settings: settings.clone(),
+             circle,
+@@ -87,13 +107,15 @@
+         side_content_min_width: PREVIEW_MIN_WIDTH,
+         stacked_side_content: Some(Box::new(())),
+         on_selection_changed: Some(Box::new(move |index, tx: &AppEventSender| {
+-            if let Some(style) = MagicStyle::ALL.get(index) {
+-                preview.set_style(*style);
+-                tx.send(AppEvent::MagicStylePreviewed);
++            match MagicStyle::ALL.get(index) {
++                Some(style) => preview.set_style(*style),
++                // The random choice previews what it would draw.
++                None => preview.preview_random(),
+             }
++            tx.send(AppEvent::MagicStylePreviewed);
+         })),
+         on_cancel: Some(Box::new(move |tx: &AppEventSender| {
+-            restore.set_style(original);
++            restore.restore(original, original_random);
+             tx.send(AppEvent::MagicStylePreviewed);
+         })),
+         ..Default::default()
+--- a/codex-rs/tui/src/magic_sides/pillars.rs
++++ b/codex-rs/tui/src/magic_sides/pillars.rs
+@@ -93,9 +93,8 @@
+         band: motion
+             .animated
+             .then(|| height - (motion.spin * 7.0) % (height + 8.0)),
+-        pulse: motion
+-            .outlet
+-            .is_some_and(|progress| (progress * 14.0).sin() > 0.3),
++        // The outlet pulses the lit pillars about once a second; without motion they stay lit.
++        pulse: motion.outlet.is_some() && motion.animated && (motion.spin * 5.4).sin() > 0.3,
+     };
+     match style {
+         MagicStyle::Classic => classic(&mut pen),
+--- a/codex-rs/tui/src/magic_style.rs
++++ b/codex-rs/tui/src/magic_style.rs
+@@ -98,6 +98,16 @@
+             .find(|style| style.id().eq_ignore_ascii_case(text) || style.name() == text)
+     }
+ 
++    /// Another style than this one, picked by `roll`, a random number.
++    pub(crate) fn other(self, roll: u64) -> Self {
++        let count = Self::ALL.len() as u64;
++        let index = self as u64;
++        Self::ALL
++            .get(((index + 1 + roll % (count - 1)) % count) as usize)
++            .copied()
++            .unwrap_or_default()
++    }
++
+     /// Elemental styles are an explicit opt-in, so they may use ANSI colours beyond Codex's
+     /// magenta and cyan. They stay on the 16 ANSI colours so terminal themes still choose the
+     /// shades; the default classic style keeps the Codex palette.
+@@ -235,11 +245,42 @@
+     }
+ }
+ 
++/// What `/magic <style>` asks for: one style, or a different one drawn for every turn.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(crate) enum MagicChoice {
++    Style(MagicStyle),
++    Random,
++}
++
++impl MagicChoice {
++    const RANDOM_ID: &str = "random";
++    const RANDOM_NAME: &str = "随机";
++    pub(crate) const RANDOM_DESCRIPTION: &str = "每个回合随机换一种法阵，不与上一回合重复";
++
++    /// Matches a style, or `random` (any case) and its Chinese name.
++    pub(crate) fn parse(text: &str) -> Option<Self> {
++        let text = text.trim();
++        if text.eq_ignore_ascii_case(Self::RANDOM_ID) || text == Self::RANDOM_NAME {
++            return Some(Self::Random);
++        }
++        MagicStyle::parse(text).map(Self::Style)
++    }
++
++    pub(crate) fn label(self) -> String {
++        match self {
++            Self::Style(style) => style.label(),
++            Self::Random => format!("{} {}", Self::RANDOM_ID, Self::RANDOM_NAME),
++        }
++    }
++}
++
+ /// Magic display settings shared by every chat widget of one app run. Nothing is persisted.
+ #[derive(Clone, Debug, Default)]
+ pub(crate) struct MagicSettings {
+     enabled: Arc<AtomicBool>,
+     style: Arc<AtomicU8>,
++    /// Whether every turn draws another style; `style` holds the current draw.
++    random: Arc<AtomicBool>,
+ }
+ 
+ impl MagicSettings {
+@@ -258,8 +299,58 @@
+             .unwrap_or_default()
+     }
+ 
++    /// Keeps one style, ending a random choice.
+     pub(crate) fn set_style(&self, style: MagicStyle) {
+         self.style.store(style as u8, Ordering::Relaxed);
++        self.random.store(false, Ordering::Relaxed);
++    }
++
++    pub(crate) fn is_random(&self) -> bool {
++        self.random.load(Ordering::Relaxed)
++    }
++
++    pub(crate) fn choice(&self) -> MagicChoice {
++        if self.is_random() {
++            MagicChoice::Random
++        } else {
++            MagicChoice::Style(self.style())
++        }
++    }
++
++    /// Keeps `choice`; turning random on draws a style other than the current one.
++    pub(crate) fn set_choice(&self, choice: MagicChoice) {
++        match choice {
++            MagicChoice::Style(style) => self.set_style(style),
++            MagicChoice::Random => {
++                if !self.random.swap(true, Ordering::Relaxed) {
++                    self.draw();
++                }
++            }
++        }
++    }
++
++    /// The random choice, with a fresh draw to preview.
++    pub(crate) fn preview_random(&self) {
++        self.random.store(true, Ordering::Relaxed);
++        self.draw();
++    }
++
++    /// Puts back a style and choice seen earlier, as when a preview is cancelled.
++    pub(crate) fn restore(&self, style: MagicStyle, random: bool) {
++        self.set_style(style);
++        self.random.store(random, Ordering::Relaxed);
++    }
++
++    /// Draws the next turn's style when the choice is random.
++    pub(crate) fn reroll(&self) {
++        if self.is_random() {
++            self.draw();
++        }
++    }
++
++    fn draw(&self) {
++        let next = self.style().other(rand::random::<u64>());
++        self.style.store(next as u8, Ordering::Relaxed);
+     }
+ }
+ 
+--- a/codex-rs/tui/src/magic_style_tests.rs
++++ b/codex-rs/tui/src/magic_style_tests.rs
+@@ -52,3 +52,65 @@
+         assert_eq!(settings.style(), style);
+     }
+ }
++
++#[test]
++fn the_random_choice_parses_and_draws_another_style() {
++    for text in ["random", "RANDOM", " Random ", "随机"] {
++        assert_eq!(
++            MagicChoice::parse(text),
++            Some(MagicChoice::Random),
++            "{text:?}"
++        );
++    }
++    assert_eq!(
++        MagicChoice::parse("火"),
++        Some(MagicChoice::Style(MagicStyle::Fire))
++    );
++    assert_eq!(MagicChoice::parse("rand"), None);
++    assert_eq!(MagicChoice::Random.label(), "random 随机");
++    for style in MagicStyle::ALL {
++        let others: HashSet<_> = (0..9).map(|roll| style.other(roll) as u8).collect();
++        assert_eq!(others.len(), 9, "{style:?} reaches every other style");
++        assert!(
++            !others.contains(&(style as u8)),
++            "{style:?} never draws itself"
++        );
++    }
++}
++
++#[test]
++fn a_random_choice_is_shared_rerolled_and_restored() {
++    let settings = MagicSettings::default();
++    let widget = settings.clone();
++    settings.set_choice(MagicChoice::Random);
++    assert_eq!(widget.choice(), MagicChoice::Random);
++    let drawn = widget.style();
++    assert_ne!(
++        drawn,
++        MagicStyle::Classic,
++        "turning random on draws another style"
++    );
++    settings.set_choice(MagicChoice::Random);
++    assert_eq!(
++        widget.style(),
++        drawn,
++        "choosing random again keeps the draw"
++    );
++    widget.reroll();
++    assert_ne!(settings.style(), drawn);
++    settings.restore(MagicStyle::Holy, /*random*/ false);
++    assert_eq!(widget.choice(), MagicChoice::Style(MagicStyle::Holy));
++    widget.reroll();
++    assert_eq!(
++        settings.style(),
++        MagicStyle::Holy,
++        "a chosen style never rerolls"
++    );
++    widget.preview_random();
++    assert!(settings.is_random() && settings.style() != MagicStyle::Holy);
++    settings.restore(MagicStyle::Holy, /*random*/ true);
++    assert_eq!(
++        (widget.choice(), widget.style()),
++        (MagicChoice::Random, MagicStyle::Holy)
++    );
++}

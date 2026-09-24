@@ -37,7 +37,26 @@ CIRCLE, LEFT, RIGHT = (36, 83), (0, 35), (84, 120)
 _orig_dsr = pyte.Screen.report_device_status
 pyte.Screen.report_device_status = lambda self, *a, **k: None if k.get("private") else _orig_dsr(self, *a)
 _orig_sgr = pyte.Screen.select_graphic_rendition
-pyte.Screen.select_graphic_rendition = lambda self, *a, **k: None if k.get("private") else _orig_sgr(self, *a)
+
+
+def _sgr(self, *attrs, **kwargs):
+    """pyte ignores SGR 2 (faint); keep it in the unused blink attribute, as render_frames does."""
+    if kwargs.get("private"):
+        return None
+    mapped, index = [], 0
+    while index < len(attrs):
+        value = attrs[index]
+        if value in (38, 48) and index + 1 < len(attrs):
+            width = 3 if attrs[index + 1] == 5 else 5
+            mapped.extend(attrs[index:index + width])
+            index += width
+            continue
+        mapped.extend({2: [5], 22: [22, 25]}.get(value, [value]))
+        index += 1
+    return _orig_sgr(self, *mapped)
+
+
+pyte.Screen.select_graphic_rendition = _sgr
 
 CAMPBELL = ["0c0c/0c0c/0c0c", "c5c5/0f0f/1f1f", "1313/a1a1/0e0e", "c1c1/9c9c/0000", "0000/3737/dada",
             "8888/1717/9898", "3a3a/9696/dddd", "cccc/cccc/cccc", "7676/7676/7676", "e7e7/4848/5656",
@@ -154,8 +173,9 @@ class Terminal:
         while time.monotonic() - self.last_output < 0.04 and time.monotonic() < deadline:
             time.sleep(0.005)
 
-    def rows(self):
-        self.settle()
+    def rows(self, settle=True):
+        if settle:
+            self.settle()
         with self.lock:
             rows = []
             for y in range(self.screen.lines):
@@ -185,12 +205,19 @@ class Terminal:
     def text(self):
         return "\n".join(self.rows())
 
-    def cells(self):
-        self.settle()
+    def cells(self, settle=True):
+        if settle:
+            self.settle()
         with self.lock:
-            return [[(c.data, c.fg, c.bold, False, c.reverse) for c in
+            return [[(c.data, c.fg, c.bold, c.blink, c.reverse) for c in
                      (self.screen.buffer[y][x] for x in range(self.screen.columns))]
                     for y in range(self.screen.lines)]
+
+    def region_dots(self, height, settle=True):
+        """Braille dots in the top `height` rows, and the share of those cells drawn faint."""
+        cells = [c for row in self.cells(settle)[:height] for c in row if "\u2801" <= (c[0] or " ") <= "\u28ff"]
+        dots = sum(bin(ord(c[0]) - 0x2800).count("1") for c in cells)
+        return dots, (sum(1 for c in cells if c[3]) / len(cells) if cells else 0.0)
 
     def wait(self, predicate, timeout=30, what="condition"):
         deadline = time.monotonic() + timeout
@@ -409,12 +436,43 @@ def main():
             results["sides"] = True
 
             outlet = term.wait(lambda r: tab_row(r) == 24, timeout=8, what="outlet after the final answer")
+            opened = time.monotonic()
             frames.append(("turn-05-outlet", "最终回复：法阵定格并向下释放", term.cells()))
             assert "神谕降临" in term.band(*RIGHT, 24), "outlet summary:\n" + term.band(*RIGHT, 24)
             assert any("MAGIC_FINAL" in row for row in outlet[24:]), "answer is rendered by Copilot below"
-            idle = term.wait(lambda r: tab_row(r) == 5, timeout=8, what="return to the idle circle")
+            # The outlet stays 15 s; then everything dims and scatters before the idle emblem returns.
+            time.sleep(4)
+            settled, _ = term.region_dots(24)
+            faded_at, least, fade_frames = None, settled, 0
+            # Sampled without waiting for quiet output: the region redraws every 50 ms here.
+            while True:
+                rows = term.rows(settle=False)
+                elapsed = time.monotonic() - opened
+                if tab_row(rows) == 5:
+                    break
+                assert tab_row(rows) in (24, None), f"the outlet keeps its rows until it has faded: {tab_row(rows)}"
+                assert elapsed < 25, "the circle never returned to idle"
+                dots, faint = term.region_dots(24, settle=False)
+                if faint >= 0.95:
+                    faded_at = faded_at or elapsed
+                    least = min(least, dots)
+                    if fade_frames < 2 and elapsed - faded_at >= fade_frames * 0.5:
+                        fade_frames += 1
+                        frames.append((f"turn-06-fade-{fade_frames}", f"出口保留 15s 后暗淡扩散（{fade_frames}）",
+                                       term.cells()))
+                time.sleep(0.05)
+            idle_at = time.monotonic() - opened
+            assert faded_at is not None, "the circle vanished without fading"
+            # The colours dim 0.48 s into the 1.6 s fade.
+            began = faded_at - 0.48
+            assert 14.5 <= began <= 16.0, f"the outlet stayed {began:.1f} s"
+            assert least * 2 < settled, f"the dust thins: {least} of {settled} dots"
+            results["outlet_seconds"] = round(began, 1)
+            results["fade_seconds"] = round(idle_at - began, 1)
+            results["fade_dots"] = [settled, least]
+            idle = term.rows()
             results["turn_seconds"] = round(time.monotonic() - started, 1)
-            frames.append(("turn-06-complete", "回合完成，法阵收回", term.cells()))
+            frames.append(("turn-07-complete", "回合完成，法阵收回", term.cells()))
             assert any("MAGIC_FINAL" in row for row in idle), "answer stays readable"
             if args.windows_terminal:
                 raw = "".join(term.raw)
@@ -454,6 +512,20 @@ def main():
             term.process.write("2")
             rows = term.wait(lambda r: tab_row(r) == 5 and "wind 风" in r[0], timeout=5, what="wind chosen by number")
             assert len(Fixture.requests) == before, "local /magic commands reached the model"
+
+            # The random choice is the last item; Enter keeps the style its preview drew.
+            wind = term.band(*CIRCLE, 5)
+            term.type("/magic list")
+            term.enter()
+            term.wait(lambda r: any("Magic circle styles" in row for row in r), timeout=5, what="picker for random")
+            term.process.write("\x1b[A\x1b[A")
+            term.wait(lambda r: any("› ?. random 随机" in row for row in r), timeout=5, what="random highlighted")
+            frames.append(("09-random", "/magic list：随机", term.cells()))
+            term.enter()
+            term.wait(lambda r: tab_row(r) == 5 and "random 随机" in r[0], timeout=5, what="random chosen")
+            assert term.band(*CIRCLE, 5) != wind, "random drew another style than wind"
+            assert len(Fixture.requests) == before, "local /magic commands reached the model"
+            results["random_choice"] = True
 
             # Mouse: a click on Copilot's own tab bar must reach it with the row shifted.
             rows = term.rows()

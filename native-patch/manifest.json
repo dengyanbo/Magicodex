@@ -5,7 +5,8 @@
   "kept_stages": [
     "0003-downward-reply.patch",
     "0004-visual-refresh.patch",
-    "0005-magic-styles.patch"
+    "0005-magic-styles.patch",
+    "0006-magic-sides.patch"
   ],
   "protected_files_unchanged": 950,
   "windows_migration_preparation": {
@@ -26,8 +27,8 @@
     },
     {
       "path": "codex-rs/tui/src/app/event_dispatch.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "77d28aefdcf6dab6448988de1404f8c859c88f84cd865b6434d1776ad30ceb38"
+      "stage": "0007-magic-random.patch",
+      "sha256": "8f16f081199f26f5baa1ce51bcaf131f0c0d1ef9f6513811d26fbfc4aeb487be"
     },
     {
       "path": "codex-rs/tui/src/app/startup.rs",
@@ -41,8 +42,8 @@
     },
     {
       "path": "codex-rs/tui/src/app_event.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "06bbc9af761dbff175fdc30a18820f526dee6a926d0a9657a140d1e585b267a8"
+      "stage": "0007-magic-random.patch",
+      "sha256": "0003e90b1d33430694cacfacb3bb8a2e360afe93bd28c552e170035055937d1a"
     },
     {
       "path": "codex-rs/tui/src/bottom_pane/command_popup.rs",
@@ -71,8 +72,8 @@
     },
     {
       "path": "codex-rs/tui/src/chatwidget/magic.rs",
-      "stage": "0006-magic-sides.patch",
-      "sha256": "6a4ff3772ac7437e6a22c76c150bf65189f1dd084f55bd4e2e64971d0435e444"
+      "stage": "0007-magic-random.patch",
+      "sha256": "cfe165717f3fb3d664b825e4af77c56102251fe8d9c81397c6f14a9ce86fb0ff"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/protocol.rs",
@@ -116,8 +117,8 @@
     },
     {
       "path": "codex-rs/tui/src/chatwidget/tests/magic_tests.rs",
-      "stage": "0006-magic-sides.patch",
-      "sha256": "755a8574ff55a4f6f51a7952e974412534284b73c58b0da3ed05a6e6661ee052"
+      "stage": "0007-magic-random.patch",
+      "sha256": "7173bc2e40e31d0ab1250c402afcd843a256d666b1bfc785c68c3230274e6022"
     },
     {
       "path": "codex-rs/tui/src/chatwidget/tests/plan_mode.rs",
@@ -136,8 +137,8 @@
     },
     {
       "path": "codex-rs/tui/src/chatwidget/turn_runtime.rs",
-      "stage": "0003-downward-reply.patch",
-      "sha256": "c99f7c82b52af55a70419503804bb555f5e22308dca374f6081bba0a7a4824f7"
+      "stage": "0007-magic-random.patch",
+      "sha256": "4ddeaee3b659bafa8ad60702f48cdbf046c0b46cb2281f08baf2f39828e04664"
     },
     {
       "path": "codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__pnpm_update_available_history_cell_snapshot.snap",
@@ -171,8 +172,8 @@
     },
     {
       "path": "codex-rs/tui/src/magic_circle.rs",
-      "stage": "0006-magic-sides.patch",
-      "sha256": "590c125f577fa341e70a83d744d314fe19738dd90e2fcbadd1b72c526f5516c2"
+      "stage": "0007-magic-random.patch",
+      "sha256": "c15773029ba6dcc0a2ae2fe0d6ce00497ef3073d6a0ecdb0dfeb00401ee7b369"
     },
     {
       "path": "codex-rs/tui/src/magic_circle_tests.rs",
@@ -191,8 +192,8 @@
     },
     {
       "path": "codex-rs/tui/src/magic_picker.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "dbe0cb6055856600673e2ea9f4a3b4f5ea6fce25cda9b741eafb2bf211a53e86"
+      "stage": "0007-magic-random.patch",
+      "sha256": "d2dcd8da3431a5296b969244b25ac99ee42f0f92f6dc8f4e1030497658035250"
     },
     {
       "path": "codex-rs/tui/src/magic_sides.rs",
@@ -216,8 +217,8 @@
     },
     {
       "path": "codex-rs/tui/src/magic_sides/pillars.rs",
-      "stage": "0006-magic-sides.patch",
-      "sha256": "b884f2970ac146bf36d4dcd448b3de675351c2ece3830b8d6f55117a9974df34"
+      "stage": "0007-magic-random.patch",
+      "sha256": "495d77865ddf6b9779c9186db41cd7b6e5cb9e5b027798a0b70e8b5eccf4cd22"
     },
     {
       "path": "codex-rs/tui/src/magic_sides/spells.rs",
@@ -231,13 +232,13 @@
     },
     {
       "path": "codex-rs/tui/src/magic_style.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "e68747ad015d1048e240fc548701c906f6120dc8be5cdc406d159e090cb3bbc1"
+      "stage": "0007-magic-random.patch",
+      "sha256": "45f10b14c12eaf5f32a41c7f7b278365d309a496544fbe0d225389d99cc76632"
     },
     {
       "path": "codex-rs/tui/src/magic_style_tests.rs",
-      "stage": "0005-magic-styles.patch",
-      "sha256": "b96916987a4f18c43e16aecf59049f2df3ee0e4ce54508741d8c70483c7ad92c"
+      "stage": "0007-magic-random.patch",
+      "sha256": "ead5a2871e903c0a90e7aa1fffdc2a0ec2db64499638fb6e2eb3b36804d243e4"
     },
     {
       "path": "codex-rs/tui/src/magic_styles.rs",

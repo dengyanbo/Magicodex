@@ -32,6 +32,10 @@ impl ChatWidget {
     /// both the agent turn lifecycle and MCP startup lifecycle.
     pub(super) fn update_task_running_state(&mut self) {
         if !self.turn_lifecycle.agent_turn_running && !self.input_queue.user_turn_pending_start {
+            if self.magic_circle.is_active() {
+                // Back to idle: a random choice draws the next turn's style now.
+                self.magic.reroll();
+            }
             self.magic_circle.finish();
         }
         self.bottom_pane.set_task_running(

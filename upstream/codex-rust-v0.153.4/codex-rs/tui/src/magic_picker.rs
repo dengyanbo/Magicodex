@@ -1,7 +1,9 @@
-//! The `/magic list` picker: every style, with a preview of the highlighted one.
+//! The `/magic list` picker: every style and the random choice, with a preview of the
+//! highlighted one.
 //!
-//! Moving the highlight previews the style everywhere the circle is shown; Enter keeps it and
-//! turns the circle on, Esc restores the previous style.
+//! Moving the highlight previews the style everywhere the circle is shown (the random choice
+//! previews a fresh draw); Enter keeps it and turns the circle on, Esc restores the previous
+//! style.
 
 use std::time::Duration;
 use std::time::Instant;
@@ -18,6 +20,7 @@ use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::magic_circle::MagicCircle;
 use crate::magic_circle::MagicScene;
 use crate::magic_circle::MagicView;
+use crate::magic_style::MagicChoice;
 use crate::magic_style::MagicSettings;
 use crate::magic_style::MagicStyle;
 use crate::render::renderable::Renderable;
@@ -50,16 +53,26 @@ impl Renderable for StylePreview {
 
 pub(crate) fn picker_params(settings: &MagicSettings) -> SelectionViewParams {
     let original = settings.style();
-    let items = MagicStyle::ALL
+    let original_random = settings.is_random();
+    let choices = MagicStyle::ALL
         .into_iter()
-        .map(|style| SelectionItem {
-            name: style.label(),
-            description: Some(style.description().to_string()),
-            is_current: style == original,
+        .map(MagicChoice::Style)
+        .chain([MagicChoice::Random]);
+    let items = choices
+        .map(|choice| SelectionItem {
+            name: choice.label(),
+            description: Some(
+                match choice {
+                    MagicChoice::Style(style) => style.description(),
+                    MagicChoice::Random => MagicChoice::RANDOM_DESCRIPTION,
+                }
+                .to_string(),
+            ),
+            is_current: choice == settings.choice(),
             dismiss_on_select: true,
-            search_value: Some(style.label()),
+            search_value: Some(choice.label()),
             actions: vec![Box::new(move |tx: &AppEventSender| {
-                tx.send(AppEvent::MagicStyleSelected(style));
+                tx.send(AppEvent::MagicStyleSelected(choice));
             })],
             ..Default::default()
         })
@@ -77,7 +90,14 @@ pub(crate) fn picker_params(settings: &MagicSettings) -> SelectionViewParams {
         subtitle: Some("移动即预览 · Enter 选用并开启 · Esc 恢复原样式".to_string()),
         footer_hint: Some(standard_popup_hint_line()),
         items,
-        initial_selected_idx: MagicStyle::ALL.iter().position(|style| *style == original),
+        initial_selected_idx: Some(if original_random {
+            MagicStyle::ALL.len()
+        } else {
+            MagicStyle::ALL
+                .iter()
+                .position(|style| *style == original)
+                .unwrap_or(0)
+        }),
         side_content: Box::new(StylePreview {
             settings: settings.clone(),
             circle,
@@ -87,13 +107,15 @@ pub(crate) fn picker_params(settings: &MagicSettings) -> SelectionViewParams {
         side_content_min_width: PREVIEW_MIN_WIDTH,
         stacked_side_content: Some(Box::new(())),
         on_selection_changed: Some(Box::new(move |index, tx: &AppEventSender| {
-            if let Some(style) = MagicStyle::ALL.get(index) {
-                preview.set_style(*style);
-                tx.send(AppEvent::MagicStylePreviewed);
+            match MagicStyle::ALL.get(index) {
+                Some(style) => preview.set_style(*style),
+                // The random choice previews what it would draw.
+                None => preview.preview_random(),
             }
+            tx.send(AppEvent::MagicStylePreviewed);
         })),
         on_cancel: Some(Box::new(move |tx: &AppEventSender| {
-            restore.set_style(original);
+            restore.restore(original, original_random);
             tx.send(AppEvent::MagicStylePreviewed);
         })),
         ..Default::default()

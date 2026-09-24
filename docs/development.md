@@ -8,7 +8,7 @@
 | --- | --- |
 | `copilot\` | magicopilot：GitHub Copilot CLI 外壳（Rust） |
 | `upstream\codex-rust-v0.153.4\` | 与 Codex 发布标签对应的源码，已应用 Magicodex 补丁 |
-| `native-patch\` | 相对上游源码的补丁 0001–0006 与 `manifest.json` |
+| `native-patch\` | 相对上游源码的补丁 0001–0007 与 `manifest.json` |
 | `native\` | 本机构建并发布的补丁版 `codex.exe`（不在 Git 中） |
 | `scripts\` | 构建、导出补丁、打包与发布脚本 |
 | `tests\` | 端到端验收与画面渲染脚本 |
@@ -95,6 +95,7 @@ pwsh -File scripts\New-Release.ps1 -Publish           # 生成并创建 GitHub R
 | `native-patch\0004-visual-refresh.patch` | 法阵视觉重绘：分层六芒星、双文字带、流光与描线动画、光锥出口、流式高亮 |
 | `native-patch\0005-magic-styles.patch` | 10 种法阵类型、`/magic list` 预览选择弹窗与 `/magic <类型>` |
 | `native-patch\0006-magic-sides.patch` | 实时法阵两侧：魔导书两页、10 种法阵柱、符文粒子与使魔（与 magicopilot 的 `circle\sides\` 同源） |
+| `native-patch\0007-magic-random.patch` | 随机法阵：`/magic random`、选择弹窗的随机项、每回合重新抽签；两侧随 magicopilot 0.3.0 重新生成 |
 | `native-patch\manifest.json` | 上游版本、改动文件与受保护源码校验 |
 
 重新导出补丁需要原始源码 ZIP（不在 Git 中）：
@@ -109,7 +110,13 @@ Invoke-WebRequest 'https://codeload.github.com/openai/codex/zip/refs/tags/rust-v
 - `--keep-stage <补丁>`：原样保留该提交之后尚未提交的阶段，按顺序可重复；
 - `--stage-name`：接收其余改动的新阶段文件名。
 
-它同时核对原提示、输入与键位相关文件未被改动。0001–0006 都已提交。新阶段应以只含 0001、0002 的提交 `11cbcbc` 为基准，把已有的 0003 起各阶段按顺序作为 `--keep-stage` 保留，这样 manifest 才能把每个文件记到真正改动它的阶段；直接用 `--base-ref HEAD` 时补丁文件本身不受影响，但 0003 起各阶段改过的文件会被记到 0002 名下。0006 是这样导出的：
+它同时核对原提示、输入与键位相关文件未被改动。0001–0007 都已提交。新阶段应以只含 0001、0002 的提交 `11cbcbc` 为基准，把已有的 0003 起各阶段按顺序作为 `--keep-stage` 保留，这样 manifest 才能把每个文件记到真正改动它的阶段；直接用 `--base-ref HEAD` 时补丁文件本身不受影响，但 0003 起各阶段改过的文件会被记到 0002 名下。0007 是这样导出的：
+
+```powershell
+python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.zip --base-ref 11cbcbc250297f8b50ea94ac6851b11170c4de9d --keep-stage .\native-patch\0003-downward-reply.patch --keep-stage .\native-patch\0004-visual-refresh.patch --keep-stage .\native-patch\0005-magic-styles.patch --keep-stage .\native-patch\0006-magic-sides.patch --stage-name 0007-magic-random.patch
+```
+
+0006 当时是这样导出的：
 
 ```powershell
 python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.zip --base-ref 11cbcbc250297f8b50ea94ac6851b11170c4de9d --keep-stage .\native-patch\0003-downward-reply.patch --keep-stage .\native-patch\0004-visual-refresh.patch --keep-stage .\native-patch\0005-magic-styles.patch --stage-name 0006-magic-sides.patch
@@ -208,6 +215,7 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
 
 - `/magic off` 会重绘并隐藏历史中的法阵装饰，但不删除回复；再次开启可恢复装饰。
 - 长回复随终端正常滚动，法阵可能滚出当前可见区域。
+- 定格的出口是对话记录的一部分，一直保留。magicopilot 0.3.0 起出口保留 15 秒后暗淡、扩散再消失；Codex 这里没有“出口撤掉”这一步，所以不做保留时限和消散，否则回复会在记录里跳动位置，Windows Terminal 策略下已写进滚动区的内容也改不了。
 
 输出过程中切换开关：
 
@@ -222,6 +230,7 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
 - ↑/↓ 移动高亮即实时预览：终端约 85 列及以上时，弹窗右侧显示该类型充能完成的法阵；法阵已开启时，输入框上方的待机阵或蓄力阵也同步切换。
 - Enter 选用并开启法阵；数字键 1–9 按 Codex 列表的原有行为直接选用对应类型；Esc 恢复打开弹窗前的类型，开关状态不变。
 - 也可以直接输入 `/magic fire`、`/magic 火` 或 `/magic FIRE`，切换并开启。无法识别的参数只显示用法，不改变当前设置。
+- 随机：`/magic random`、`/magic 随机`，或弹窗最后一项 `random 随机`（没有数字键）。选中时先抽一种（不同于当前的），之后每个回合结束、法阵回到待机时再抽一次，永远不与上一回合相同，所以待机小阵显示的就是下一回合的法阵。弹窗里高亮随机项时预览的就是抽到的那种，Enter 后下一回合就用它，Esc 恢复原先的类型与选择。开关提示显示 `random 随机`；定格的出口记下当时抽到的类型。magicopilot 的随机规则相同。
 - 类型与开关一样只在本次运行的各会话间共享，不写入配置；重新启动后恢复为关闭的 `classic`。
 - 已定格在历史中的出口保留当时的类型；之后切换只影响新的法阵。
 
@@ -256,6 +265,21 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
 - 法阵默认关闭；关闭时两侧同样不画。定格到对话记录里的出口保持原样，不带两侧内容。宽度、高度门槛与 magicopilot 相同（65/89/109 列，区域至少 12 行）；`animations = false` 时两侧静止。失败的法术只用 `×` 与暗色表示，`classic` 仍只用 magenta/cyan。
 
 ### 验证记录
+
+**随机法阵（0007）**
+
+- 完整原生 TUI 套件：4121 通过、10 跳过（比 0006 多 4 项），同样用 `cargo test -p codex-tui --release`、不带 `WT_SESSION` 运行。
+- 魔法阵定向用例由 50 项增至 54 项，新增：
+  - `random`/`随机` 的解析与标签，`other()` 对每种类型都能抽到其余 9 种、不会抽到自己；
+  - 设置在各会话间共享，再次选择随机时保留当前抽到的类型，固定类型不重抽，Esc 恢复原先的类型与选择；
+  - 弹窗最后一项：高亮时预览抽到的类型，Esc 恢复，Enter 后保留预览的那一种，并标为 current；
+  - 连续 30 个回合每次结束都换一种、不与上一回合相同，覆盖至少 6 种；改回固定类型后不再变化。
+- 选择弹窗快照未变：初始高亮在 classic 时只显示前 8 项，随机项需要滚动才出现。
+- Clippy（`--tests -p codex-tui --release`）在 codex-tui 中无告警，`cargo fmt --check` 通过；release 构建仍只有未改动的 app-server 一处 `unused_mut`、cloud-tasks 两处未使用 import 警告。
+- ConPTY 验收在通用策略与 Windows Terminal 策略下均通过：在原有各项之后，`/magic random` 显示 `Magic circle on · random 随机`，一轮回合的出口位于正文上方，关闭提示为 `Magic circle off · random 随机`；四轮模型请求的默认 `instructions` 完全相同。
+- 两侧代码随 magicopilot 0.3.0 重新生成，只有 `pillars.rs` 变化（出口时的脉动改按动画时钟）；Codex 的两侧从不进入出口，显示不变。15 秒保留与消散不适用于 Codex，原因见“从法阵下方显字”。
+- 七阶段补丁：0001–0006 重新导出后逐字节不变，新增 0007（10 个文件）；950 个原提示、输入与键位相关文件保持不变。从原始 ZIP 依次重放七个阶段后，manifest 中 101 个文件及全部 1754 个 TUI 文件与源码逐字节一致。
+- 发布的 `native\codex.exe` SHA256 为 `E502A773778B95989275AF17D1E1B3ED6B28BF20D79461662A0590BAE0CADDE3`，用户目录扫描为 0 处。本轮只用本地 fixture，没有调用真实模型。
 
 **法阵两侧（0006）**
 
@@ -352,8 +376,9 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
 | `screen.rs` | vt100 模拟 Copilot 的屏幕，把终端查询转交真实终端，跟踪同步输出、焦点、进度等状态 |
 | `input.rs` | 解析键盘、鼠标、粘贴，鼠标坐标按法阵高度平移 |
 | `session.rs` | 读取 `~/.copilot/session-state/<会话>/events.jsonl`，跟随会话切换 |
-| `magic.rs` | 法阵状态机、区域高度、`/magic` 命令与输入框识别、输入时的用法提示、类型选择器 |
+| `magic.rs` | 法阵状态机（出口保留 15 秒、消散 1.6 秒）、区域高度、`/magic` 命令与输入框识别、输入时的用法提示、类型选择器与随机抽签 |
 | `render.rs`、`circle\` | 合成画面；10 种法阵的绘制（与 Codex 补丁同源） |
+| `circle\dissolve.rs` | 法阵消失时的暗淡扩散：对整幅定格画面做变换，点阵外扩变稀、文字碎成点尘、颜色去粗体再转暗（Codex 不用） |
 | `circle\sides\` | 法阵两侧：布局与宽度分级、工具调用到法术的映射与本回合记录、魔导书两页、10 种法阵柱、符文粒子、使魔 |
 | `app.rs` | 主循环：子进程输出、输入、事件、限帧绘制、退出恢复 |
 
@@ -375,6 +400,20 @@ uv run --no-project --with pyte --with pywinpty --with psutil --with wcwidth --w
   - `--windows-terminal` 模拟 Windows Terminal 环境；
   - `--baseline` 另外直接运行一次 Copilot，对比发给模型的请求；
   - `--frames <目录>` 保存各阶段画面。
+
+### 验证记录（0.3.0）
+
+- 本版改动：
+  - 出口保留时间从 2.6 秒增加到 15 秒；两侧的倾泻动画仍按 2.6 秒进行，法阵柱的脉动改按动画时钟（`--magic-no-motion` 时静止，此前无动画时仍会闪）。
+  - 法阵消失时先暗淡、扩散再消失（1.6 秒，`circle\dissolve.rs`）：用于出口结束和被中断的回合；消散中开始新的 prompt 立即重新蓄力；无动画时只变暗。
+  - 随机：`/magic random`、`/magic 随机`、`--magic-style random`、选择器最后一项“?. random 随机”；法阵回到待机时抽下一回合的类型，不与上一回合相同。
+- 端到端 `tests\copilot_terminal.py` 在 Copilot CLI 1.0.89-1 上通过，Windows Terminal 模式（含 `--baseline` 对比）与通用模式：
+  - 出口出现后实测保留 15.0 秒，消散 1.6 秒，区域在消散期间保持 24 行；消散中点阵从约 1170 个降到 5–6 个，然后回到 5 行待机；
+  - 选择器高亮随机项时显示“› ?. random 随机”，Enter 后提示 `random 随机`，待机小阵换成了另一种法阵；
+  - 其余检查与 0.2.1 相同。测量改为不等输出静默直接读屏：出口期间每 50 ms 重绘一次，等静默会把采样拖到约 1 秒一次（第一次通用模式运行因此测得 15.8/0.9 秒）。
+  - 测试终端现在记录 DIM 属性（pyte 不支持 SGR 2，映射到未用的 blink），截图能看出变暗。
+- 渲染画面审查：出口 → 消散约 0.5 秒（整座法阵连同两侧转暗、扩成稀疏尘环，文字逐个碎掉）→ 约 1 秒（零星点尘散满区域）→ 待机。
+- 57 项单元测试通过（新增：出口 15 秒与消散时序、倾泻进度、消散中新 prompt、随机抽签不重复且覆盖多种类型、选择器随机项的预览/选用/取消、消散变换的起点一致/扩散/变稀/变暗/无动画只变暗、区域渲染与启动参数）；Clippy（`-D warnings`）无告警。
 
 ### 验证记录（0.2.1）
 

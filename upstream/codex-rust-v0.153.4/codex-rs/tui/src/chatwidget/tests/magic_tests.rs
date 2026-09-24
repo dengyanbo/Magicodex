@@ -1,4 +1,5 @@
 use super::*;
+use crate::magic_style::MagicChoice;
 use crate::magic_style::MagicStyle;
 use pretty_assertions::assert_eq;
 
@@ -292,11 +293,11 @@ async fn magic_interrupted_long_answer_preserves_source_after_resize() {
     assert!(chat.magic_output.emitted);
 }
 
-fn selected_style(
+fn selected_choice(
     events: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
-) -> Option<MagicStyle> {
+) -> Option<MagicChoice> {
     std::iter::from_fn(|| events.try_recv().ok()).find_map(|event| match event {
-        AppEvent::MagicStyleSelected(style) => Some(style),
+        AppEvent::MagicStyleSelected(choice) => Some(choice),
         _ => None,
     })
 }
@@ -329,7 +330,7 @@ async fn magic_list_previews_the_highlighted_style_and_esc_restores_it() {
         !chat.magic.enabled(),
         "cancelling does not turn the circle on"
     );
-    assert_eq!(selected_style(&mut events), None);
+    assert_eq!(selected_choice(&mut events), None);
     while let Ok(op) = ops.try_recv() {
         assert!(
             !matches!(op, Op::UserTurn { .. }),
@@ -353,11 +354,103 @@ async fn magic_list_enter_keeps_the_highlighted_style_and_turns_the_circle_on() 
     chat.handle_key_event(KeyEvent::from(KeyCode::Down));
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
     assert!(!chat.bottom_pane.has_active_view());
-    let style = selected_style(&mut events).expect("Enter selects the highlighted style");
-    assert_eq!(style, MagicStyle::Tech);
-    chat.apply_magic_style(style);
+    let choice = selected_choice(&mut events).expect("Enter selects the highlighted style");
+    assert_eq!(choice, MagicChoice::Style(MagicStyle::Tech));
+    chat.apply_magic_choice(choice);
     assert!(chat.magic.enabled());
     assert_eq!(chat.magic.style(), MagicStyle::Tech);
+}
+
+#[tokio::test]
+async fn magic_list_offers_the_random_choice_last() {
+    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let highlight_random = |chat: &mut ChatWidget| {
+        chat.handle_magic_command("list");
+        for _ in MagicStyle::ALL {
+            chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+        }
+    };
+    highlight_random(&mut chat);
+    assert!(
+        chat.magic.is_random(),
+        "the highlight previews the random choice"
+    );
+    assert_ne!(
+        chat.magic.style(),
+        MagicStyle::Classic,
+        "with another style"
+    );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    assert_eq!(chat.magic.choice(), MagicChoice::Style(MagicStyle::Classic));
+    assert_eq!(selected_choice(&mut events), None);
+
+    highlight_random(&mut chat);
+    let preview = chat.magic.style();
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let choice = selected_choice(&mut events).expect("Enter selects the random choice");
+    assert_eq!(choice, MagicChoice::Random);
+    chat.apply_magic_choice(choice);
+    assert_eq!(
+        (chat.magic.choice(), chat.magic.style()),
+        (MagicChoice::Random, preview),
+        "the previewed draw is kept"
+    );
+    assert!(chat.magic.enabled());
+    chat.handle_magic_command("list");
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let current = popup
+        .lines()
+        .find(|line| line.contains("(current)"))
+        .unwrap_or_default();
+    assert!(current.contains("11. random"), "{popup}");
+}
+
+#[tokio::test]
+async fn magic_random_draws_another_style_for_every_turn() {
+    let (mut chat, mut events, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.handle_magic_command("随机");
+    let notices = drain_insert_history(&mut events)
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>();
+    assert!(
+        notices.len() == 1
+            && notices[0].contains("Magic circle on")
+            && notices[0].contains("random 随机"),
+        "{notices:?}"
+    );
+    assert_eq!(chat.magic.choice(), MagicChoice::Random);
+    assert_ne!(
+        chat.magic.style(),
+        MagicStyle::Classic,
+        "turning random on draws another style"
+    );
+    let mut seen = vec![chat.magic.style()];
+    for turn in 0..30 {
+        let id = format!("turn-{turn}");
+        let before = chat.magic.style();
+        handle_turn_started(&mut chat, &id);
+        assert_eq!(
+            chat.magic.style(),
+            before,
+            "the turn casts the style drawn for it"
+        );
+        handle_turn_completed(&mut chat, &id, /*duration_ms*/ None);
+        assert_ne!(chat.magic.style(), before, "{id} drew the same style again");
+        seen.push(chat.magic.style());
+    }
+    seen.sort_by_key(|style| *style as u8);
+    seen.dedup();
+    assert!(seen.len() >= 6, "30 turns drew only {seen:?}");
+    chat.handle_magic_command("fire");
+    handle_turn_started(&mut chat, "fixed");
+    handle_turn_completed(&mut chat, "fixed", /*duration_ms*/ None);
+    assert_eq!(
+        chat.magic.choice(),
+        MagicChoice::Style(MagicStyle::Fire),
+        "a chosen style stays"
+    );
 }
 
 #[tokio::test]

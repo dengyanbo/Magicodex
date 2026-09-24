@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::magic_sides::spells;
-use crate::magic_style::MagicStyle;
+use crate::magic_style::MagicChoice;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandAction;
@@ -22,8 +22,8 @@ impl ChatWidget {
                 self.request_redraw();
             }
             "on" | "off" => self.set_magic_display(args == "on"),
-            _ => match MagicStyle::parse(args) {
-                Some(style) => self.apply_magic_style(style),
+            _ => match MagicChoice::parse(args) {
+                Some(choice) => self.apply_magic_choice(choice),
                 None => self.push_magic_notice(Box::new(history_cell::new_error_event(
                     crate::magic_circle::USAGE.to_string(),
                 ))),
@@ -31,9 +31,9 @@ impl ChatWidget {
         }
     }
 
-    /// Keeps `style` for the rest of the app run and shows the circle.
-    pub(crate) fn apply_magic_style(&mut self, style: MagicStyle) {
-        self.magic.set_style(style);
+    /// Keeps `choice` for the rest of the app run and shows the circle.
+    pub(crate) fn apply_magic_choice(&mut self, choice: MagicChoice) {
+        self.magic.set_choice(choice);
         self.set_magic_display(/*enabled*/ true);
     }
 
@@ -44,7 +44,7 @@ impl ChatWidget {
         let state = if enabled { "on" } else { "off" };
         self.push_magic_notice(Box::new(history_cell::new_info_event(
             format!("Magic circle {state}"),
-            Some(format!("· {}", self.magic.style().label())),
+            Some(format!("· {}", self.magic.choice().label())),
         )));
     }
 

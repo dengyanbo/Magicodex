@@ -10,10 +10,13 @@ use ratatui::style::Modifier;
 use ratatui::style::Style;
 use unicode_width::UnicodeWidthChar;
 
+use crate::circle::dissolve;
 use crate::circle::sides::SideView;
+use crate::circle::state::CIRCLE_ROWS;
 use crate::circle::state::MagicCircle;
 use crate::circle::state::MagicScene;
 use crate::circle::state::MagicView;
+use crate::circle::style::Choice;
 use crate::circle::style::MagicStyle;
 use crate::magic::Magic;
 use crate::magic::Phase;
@@ -132,16 +135,28 @@ fn picker(magic: &Magic, index: usize, area: Rect, buf: &mut Buffer, now: Instan
     }
     let rows = area.height.saturating_sub(3) as usize;
     let first = index.saturating_sub(rows.saturating_sub(1));
-    for (offset, style) in MagicStyle::ALL.iter().enumerate().skip(first).take(rows) {
+    let items = MagicStyle::ALL
+        .iter()
+        .map(|style| {
+            let current = !magic.random && *style == magic.style;
+            (style.label(), style.description(), current)
+        })
+        .chain([(
+            Choice::Random.label(),
+            Choice::RANDOM_DESCRIPTION,
+            magic.random,
+        )]);
+    for (offset, (label, description, current)) in items.enumerate().skip(first).take(rows) {
         let y = area.y + 3 + (offset - first) as u16;
         let selected = offset == index;
         let marker = if selected { "›" } else { " " };
-        let current = if *style == magic.style {
-            " (current)"
-        } else {
-            ""
+        let current = if current { " (current)" } else { "" };
+        // Digits pick the first ten items, 0 the tenth; the random choice has none.
+        let number = match offset {
+            0..=9 => ((offset + 1) % 10).to_string(),
+            _ => "?".to_string(),
         };
-        let name = format!("{marker} {}. {}{current}", (offset + 1) % 10, style.label());
+        let name = format!("{marker} {number}. {label}{current}");
         let name_style = if selected {
             Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD)
         } else {
@@ -150,14 +165,14 @@ fn picker(magic: &Magic, index: usize, area: Rect, buf: &mut Buffer, now: Instan
         let used = put(buf, x, y, &name, limit, name_style);
         let column = x + used.max(24) + 2;
         if column < limit {
-            put(buf, column, y, style.description(), limit, dim);
+            put(buf, column, y, description, limit, dim);
         }
     }
     if wide {
         let (circle, at) = preview_circle(now);
         MagicView {
             circle: &circle,
-            style: MagicStyle::ALL[index],
+            style: magic.shown_style(),
             animations_enabled: false,
             scene: MagicScene::Live,
         }
@@ -174,6 +189,32 @@ fn picker(magic: &Magic, index: usize, area: Rect, buf: &mut Buffer, now: Instan
     }
 }
 
+/// The circle and, while a turn is under way, the art beside it, as they are at `at`.
+fn scene(magic: &Magic, area: Rect, buf: &mut Buffer, at: Instant) {
+    let outlet = magic.outlet(at);
+    let scene = if outlet.is_some() {
+        MagicScene::Outlet
+    } else {
+        MagicScene::Live
+    };
+    MagicView {
+        circle: &magic.circle,
+        style: magic.shown_style(),
+        animations_enabled: magic.animations,
+        scene,
+    }
+    .render_at(area, buf, at);
+    if magic.phase != Phase::Idle {
+        SideView {
+            circle: &magic.circle,
+            style: magic.shown_style(),
+            animations: magic.animations,
+            outlet,
+        }
+        .render(area, buf, at);
+    }
+}
+
 /// Draws the magic region: the circle, or the picker, and any notice.
 pub(crate) fn region(magic: &Magic, area: Rect, buf: &mut Buffer, now: Instant) {
     if area.height == 0 {
@@ -182,25 +223,17 @@ pub(crate) fn region(magic: &Magic, area: Rect, buf: &mut Buffer, now: Instant) 
     if let Some(picker_state) = magic.picker {
         picker(magic, picker_state.index, area, buf, now);
     } else if magic.enabled && area.height >= crate::magic::IDLE_ROWS {
-        let scene = match magic.phase {
-            Phase::Outlet { .. } => MagicScene::Outlet,
-            _ => MagicScene::Live,
-        };
-        MagicView {
-            circle: &magic.circle,
-            style: magic.shown_style(),
-            animations_enabled: magic.animations,
-            scene,
-        }
-        .render_at(area, buf, now);
-        if magic.phase != Phase::Idle {
-            SideView {
-                circle: &magic.circle,
-                style: magic.shown_style(),
-                animations: magic.animations,
-                outlet: magic.outlet(now),
-            }
-            .render(area, buf, now);
+        if let Phase::Fading { since, .. } = magic.phase {
+            // The circle ends as it was when it stopped, dimming and scattering from its centre.
+            let mut frame = Buffer::empty(area);
+            scene(magic, area, &mut frame, since);
+            let center = (
+                f64::from(area.x) * 2.0 + f64::from(area.width),
+                f64::from(area.y) * 4.0 + f64::from(area.height.min(CIRCLE_ROWS)) * 2.0,
+            );
+            dissolve::draw(&frame, buf, center, magic.fade(now), magic.animations);
+        } else {
+            scene(magic, area, buf, now);
         }
     }
     if let Some(text) = magic.notice(now)
@@ -282,6 +315,8 @@ mod tests {
             );
         }
         assert!(rows.contains("› 3. fire 火 (current)"), "{rows}");
+        assert!(rows.contains("  0. tech 科技"), "{rows}");
+        assert!(rows.contains("  ?. random 随机"), "{rows}");
         let braille = rows
             .chars()
             .filter(|c| ('\u{2801}'..='\u{28ff}').contains(c))
@@ -317,6 +352,68 @@ mod tests {
     }
 
     #[test]
+    fn a_finished_circle_dims_and_scatters_before_the_idle_emblem() {
+        use crate::session::Event;
+        let area = Rect::new(0, 0, 120, 24);
+        let now = Instant::now();
+        let mut magic = Magic::new(true, MagicStyle::Fire, true);
+        magic.handle(Event::Prompt("Draw a circle".into()), now);
+        magic.handle(
+            Event::Reply {
+                text: "Done".into(),
+                tools: false,
+            },
+            now,
+        );
+        magic.handle(Event::TurnEnd, now);
+        let opened = now + Duration::from_secs(2);
+        magic.tick(opened);
+        let ended = opened + Duration::from_secs(15);
+        magic.tick(ended);
+        assert!(
+            matches!(magic.phase, Phase::Fading { .. }),
+            "{:?}",
+            magic.phase
+        );
+        let drawn = |magic: &Magic, at: Instant| {
+            let mut buf = Buffer::empty(area);
+            region(magic, area, &mut buf, at);
+            buf
+        };
+        let dots = |buf: &Buffer| -> u32 {
+            buf.content()
+                .iter()
+                .filter_map(|cell| cell.symbol().chars().next())
+                .filter(|c| ('\u{2801}'..='\u{28ff}').contains(c))
+                .map(|c| (u32::from(c) - 0x2800).count_ones())
+                .sum()
+        };
+        let start = drawn(&magic, ended);
+        let middle = drawn(&magic, ended + Duration::from_millis(800));
+        let late = drawn(&magic, ended + Duration::from_millis(1200));
+        assert!(dots(&start) > 500, "the settled outlet: {}", dots(&start));
+        assert!(
+            dots(&late) * 2 < dots(&start),
+            "{} of {} dots",
+            dots(&late),
+            dots(&start)
+        );
+        assert!(
+            middle.content().iter().all(
+                |cell| cell.symbol().trim().is_empty() || cell.modifier.contains(Modifier::DIM)
+            ),
+            "everything dims"
+        );
+        magic.tick(ended + Duration::from_millis(1600));
+        assert_eq!(magic.phase, Phase::Idle);
+        let idle = drawn(&magic, ended + Duration::from_millis(1600));
+        assert!(
+            !text(&idle).join("\n").contains("施法状态"),
+            "the sides are gone"
+        );
+    }
+
+    #[test]
     fn the_command_hint_sits_beside_the_idle_emblem() {
         let area = Rect::new(0, 0, 120, 5);
         let now = Instant::now();
@@ -328,7 +425,7 @@ mod tests {
         region(&magic, area, &mut buf, now);
         let rows = text(&buf);
         assert!(
-            rows[0].starts_with(" • /magic on|off|list|<类型>"),
+            rows[0].starts_with(" • /magic on|off|list|random|<类型>"),
             "{rows:?}"
         );
         assert!(rows[1].starts_with("   magicopilot 的命令"), "{rows:?}");

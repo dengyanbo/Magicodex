@@ -22,6 +22,7 @@
 | `/magic on` / `/magic off` | 开 / 关魔法阵（默认关闭，保持原版起始界面） |
 | `/magic list`（或 `/magic`） | Codex 原生选择弹窗：↑↓ 预览，Enter 选用并开启，1–9 直接选，Esc 恢复 |
 | `/magic <类型>` | 直接切换并开启，例如 `/magic fire`、`/magic 火` |
+| `/magic random`（或 `/magic 随机`） | 每个回合随机换一种法阵，不与上一回合相同；也是弹窗最后一项 |
 
 10 种类型：classic 经典、wind 风、fire 火、water 水、thunder 雷、earth 土、holy 神圣、dark 黑暗、eerie 诡异、tech 科技。输入前是小法阵；提交后法阵随等待逐层变大、变复杂，prompt 环绕外圈、中间回复环绕内圈（不含 reasoning）；最终回复开始时法阵定格为出口，正文从法阵下方吐出。设置只在本次运行中有效，不写入配置文件。
 

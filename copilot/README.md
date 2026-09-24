@@ -4,8 +4,8 @@ magicopilot 在你的终端里运行本机已安装、**未经修改**的 GitHub
 
 - 输入前是一个小法阵；提交 prompt 后法阵变大，并随等待时间越来越大、越来越复杂，直到第一次回复；
 - 你的 prompt 和中间回复（带工具调用的阶段性回复，不含 reasoning）环绕在法阵外圈和内圈；
-- 最终回复到来时法阵定格，光从阵心向下释放，Copilot 的回答在法阵下方出现，随后法阵缩回待机大小；
-- 共 10 种法阵：classic 经典、wind 风、fire 火、water 水、thunder 雷、earth 土、holy 神圣、dark 黑暗、eerie 诡异、tech 科技。每种都有自己的外形、运动方式和文字路径，不只是换颜色；
+- 最终回复到来时法阵定格，光从阵心向下释放，Copilot 的回答在法阵下方出现；定格的法阵保留 15 秒后暗淡下去、向外扩散成点尘，再缩回待机大小；
+- 共 10 种法阵：classic 经典、wind 风、fire 火、water 水、thunder 雷、earth 土、holy 神圣、dark 黑暗、eerie 诡异、tech 科技。每种都有自己的外形、运动方式和文字路径，不只是换颜色；也可以选“随机”，每个回合换一种；
 - 蓄力时法阵两侧是一本魔导书：左页“咏唱记录”把 Copilot 的工具调用写成法术，右页“施法状态”显示咏唱时长、施法阶段和计数；紧挨法阵的两根法阵柱随层数点亮，符文粒子向阵心汇聚，右下角的小猫使魔跟着吟唱、跑腿和欢呼。
 
 Copilot CLI 自己的界面、快捷键、默认 prompt、斜杠命令、会话、认证和计费都不变：键盘、鼠标、粘贴原样交给 Copilot，只有 `/magic ...` 命令由外壳在回车时截获。
@@ -28,6 +28,7 @@ magicopilot                        # 相当于运行 copilot，多了魔法阵
 magicopilot --model gpt-5.4        # 其余参数原样交给 copilot
 magicopilot --resume               # 恢复会话同样可以
 magicopilot --magic-style 雷       # 以雷系法阵启动
+magicopilot --magic-style 随机     # 每个回合随机换一种法阵
 magicopilot --magic-help           # 外壳自己的参数
 ```
 
@@ -35,9 +36,10 @@ magicopilot --magic-help           # 外壳自己的参数
 
 | 命令 | 作用 |
 | --- | --- |
-| `/magic list`（或只输入 `/magic`） | 在法阵区域打开类型选择器：↑↓ 或 j/k 移动并实时预览，Enter 选用，1–9/0 直接选，Esc/q 取消 |
+| `/magic list`（或只输入 `/magic`） | 在法阵区域打开类型选择器：↑↓ 或 j/k 移动并实时预览，Enter 选用，1–9/0 直接选，Esc/q 取消；最后一项“?. random 随机”预览时先抽一种给你看，选用后下一回合就是它 |
 | `/magic on` / `/magic off` | 显示 / 隐藏法阵；隐藏后 Copilot 恢复全屏高度 |
 | `/magic <类型>` | 直接切换，例如 `/magic fire`、`/magic 火` |
+| `/magic 随机`（或 `/magic random`） | 每个回合随机换一种法阵，不与上一回合相同；待机小阵显示的就是下一回合的法阵 |
 
 Copilot 自己的命令列表里不会出现 `/magic`：那份列表由 Copilot 生成，外壳加不进去。所以在输入框里输入 `/` 或 `/magic` 的开头时，法阵区域左上角会显示 `/magic` 的用法，照常回车即可。
 
@@ -45,7 +47,7 @@ Copilot 自己的命令列表里不会出现 `/magic`：那份列表由 Copilot 
 
 | 参数 | 环境变量 | 说明 |
 | --- | --- | --- |
-| `--magic-style <类型>` | `MAGICOPILOT_STYLE` | 初始法阵类型（英文名或中文名） |
+| `--magic-style <类型>` | `MAGICOPILOT_STYLE` | 初始法阵类型（英文名或中文名），或 `random`/`随机` |
 | `--magic-off` | `MAGICOPILOT_OFF=1` | 启动时隐藏法阵 |
 | `--magic-no-motion` | `MAGICOPILOT_NO_MOTION=1` | 不播放动画，直接画出完整法阵 |
 | `--magic-copilot <路径>` | `MAGICOPILOT_COPILOT` | 使用指定的 Copilot CLI |
@@ -70,6 +72,7 @@ Copilot 自己的命令列表里不会出现 `/magic`：那份列表由 Copilot 
 ## 布局与限制
 
 - 法阵在顶部：待机 5 行，施法时 21 行，最终回复时 24 行，Copilot 至少保留 14 行。窗口低于 19 行时法阵自动隐藏；Copilot 请求权限确认时法阵缩回待机大小，把空间让给确认界面。
+- 最终回复后，出口（24 行）保留 15 秒，这段时间 Copilot 的可用高度相应少 19 行；之后法阵连同两侧在 1.6 秒内暗淡、向外扩散并变稀，再回到待机。被中断或失败的回合没有出口，法阵直接这样消散。期间开始新的 prompt 会立即重新蓄力。`--magic-no-motion` 时只变暗、不移动，到时消失。
 - 两侧内容只在蓄力与出口时出现，按窗口宽度逐级显示：65 列起法阵柱与粒子，89 列起两页魔导书，109 列起参数摘要与使魔；法阵区域不足 12 行（终端不足 26 行）时不显示。`--magic-no-motion` 时两侧同样静止。
 - 超链接（OSC 8）和终端图片协议不转发；Copilot 的其他显示照常。
 - `/magic` 截获和上面的用法提示都依赖 Copilot 输入框的外观（目前识别两种样式）。Copilot 改版后如果识别失败，提示不再出现，这行命令会原样交给 Copilot，只会得到“Unknown command”，不会发给模型。

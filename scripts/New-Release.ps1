@@ -35,8 +35,8 @@ $project = Split-Path $PSScriptRoot -Parent
 if (-not $OutDir) { $OutDir = Join-Path $project 'dist' }
 $installer = Join-Path $project 'install.ps1'
 
-# The Codex release follows the native-patch series (native-patch\0001-0006).
-$codexVersion = '0.6.0'
+# The Codex release follows the native-patch series (native-patch\0001-0007).
+$codexVersion = '0.7.0'
 $codexUpstream = '0.153.4'
 
 function Get-CargoVersion([string]$Manifest) {
@@ -276,8 +276,8 @@ OpenAI Codex CLI **$codexUpstream** + Magicodex 原生魔法阵补丁（非官�
 
 **适合**：使用 OpenAI Codex CLI、想在原版 Codex 界面里看到魔法阵的用户。Codex 的输入框、快捷键、命令、默认提示、审批与会话保持原样；在输入框里输入 ``/magic on`` 或 ``/magic list`` 使用。
 
-- 10 种法阵：classic 经典、wind 风、fire 火、water 水、thunder 雷、earth 土、holy 神圣、dark 黑暗、eerie 诡异、tech 科技，外形、运动和文字路径各不相同；``/magic list`` 实时预览选择。
-- 输入前是小法阵，提交后随等待逐层变大变复杂；prompt 环绕外圈、中间回复环绕内圈（不含 reasoning）；最终回复从法阵下方吐出。
+- 10 种法阵：classic 经典、wind 风、fire 火、water 水、thunder 雷、earth 土、holy 神圣、dark 黑暗、eerie 诡异、tech 科技，外形、运动和文字路径各不相同；``/magic list`` 实时预览选择，``/magic random``（或 ``/magic 随机``、列表最后一项）让每个回合随机换一种、不与上一回合相同。
+- 输入前是小法阵，提交后随等待逐层变大变复杂；prompt 环绕外圈、中间回复环绕内圈（不含 reasoning）；最终回复从法阵下方吐出，定格的出口留在对话记录里。
 - 蓄力时法阵两侧是一本魔导书：左页“咏唱记录”把命令执行、文件修改、MCP、网页搜索与子代理写成法术，右页“施法状态”显示咏唱时长、施法阶段与计数；两根与法阵同款的法阵柱随层数点亮，符文粒子向阵心汇聚，小猫使魔跟着吟唱和跑腿。终端 65 列起显示法阵柱与粒子，89 列起显示两页，109 列起显示参数与使魔。
 
 ## 安装
@@ -293,11 +293,11 @@ $(Get-InstallSnippet "codex-v$($versions.codex)" 'codex')
 
 ## 包内容
 
-``bin\codex.exe`` 由 ``rust-v$codexUpstream`` 源码应用 ``patches\0001``–``0006`` 构建；``codex-code-mode-host.exe``、``codex-resources\``、``codex-path\rg.exe`` 与 ``codex-package.json`` 是官方 ``@openai/codex-win32-x64`` $codexUpstream 原文件（OpenAI 签名，未修改），目录布局与官方包相同。许可：Apache-2.0（``LICENSE``、``NOTICE``、``MAGICODEX-NOTICE.md``）。
+``bin\codex.exe`` 由 ``rust-v$codexUpstream`` 源码应用 ``patches\0001``–``0007`` 构建；``codex-code-mode-host.exe``、``codex-resources\``、``codex-path\rg.exe`` 与 ``codex-package.json`` 是官方 ``@openai/codex-win32-x64`` $codexUpstream 原文件（OpenAI 签名，未修改），目录布局与官方包相同。许可：Apache-2.0（``LICENSE``、``NOTICE``、``MAGICODEX-NOTICE.md``）。
 
 ## 验证
 
-本地 fixture，未调用真实模型：原生 TUI 测试 4117 通过 / 10 跳过（``cargo test``），魔法阵定向用例 50 项；ConPTY 端到端在通用与 Windows Terminal 两种滚动策略下通过（``/magic list`` 预览 / Esc 恢复 / Enter 选用、fire 出口、``/magic 雷``、默认 instructions 与开关无关；蓄力时两侧显示咏唱记录、施法状态、使魔、法阵柱与粒子，定格的出口不带两侧）。``codex.exe`` 不含构建机的用户目录（打包时扫描）。本发布包按官方目录布局解压后再次运行了同一端到端验收。
+本地 fixture，未调用真实模型：原生 TUI 测试 4121 通过 / 10 跳过（``cargo test``），魔法阵定向用例 54 项；ConPTY 端到端在通用与 Windows Terminal 两种滚动策略下通过（``/magic list`` 预览 / Esc 恢复 / Enter 选用、fire 出口、``/magic 雷``、``/magic random`` 一轮回合、默认 instructions 与开关无关；蓄力时两侧显示咏唱记录、施法状态、使魔、法阵柱与粒子，定格的出口不带两侧）。``codex.exe`` 不含构建机的用户目录（打包时扫描）。本发布包按官方目录布局解压后再次运行了同一端到端验收。
 
 __FILES__
 "@
@@ -307,8 +307,8 @@ __FILES__
 **适合**：使用 GitHub Copilot CLI 的用户。magicopilot 运行你已安装、**未修改**的 ``copilot``，在它上方画魔法阵；Copilot 的界面、快捷键、斜杠命令、默认 prompt、会话、认证与计费都不变。用 ``magicopilot`` 代替 ``copilot`` 启动，其余参数原样传给 copilot。
 
 - 输入前是小法阵；提交后法阵变大，并随等待时间越来越大、越来越复杂，直到第一次回复。
-- prompt 与中间回复（不含 reasoning）环绕法阵；最终回复时法阵定格、光从阵心向下释放，Copilot 的回答出现在法阵下方，随后法阵缩回待机大小。
-- 在 Copilot 输入框里输入 ``/magic list``（预览选择 10 种法阵）、``/magic on``、``/magic off``、``/magic 火``；这些命令由外壳截获，不会发给模型。Copilot 自己的命令列表里没有 ``/magic``，输入 ``/`` 或 ``/magic`` 的开头时，法阵区域左上角会显示它的用法。
+- prompt 与中间回复（不含 reasoning）环绕法阵；最终回复时法阵定格、光从阵心向下释放，Copilot 的回答出现在法阵下方；定格的法阵保留 15 秒，然后暗淡、向外扩散成点尘，再缩回待机大小（被中断的回合也这样消散）。
+- 在 Copilot 输入框里输入 ``/magic list``（预览选择 10 种法阵）、``/magic on``、``/magic off``、``/magic 火``、``/magic 随机``（每个回合随机换一种，不与上一回合相同）；这些命令由外壳截获，不会发给模型。Copilot 自己的命令列表里没有 ``/magic``，输入 ``/`` 或 ``/magic`` 的开头时，法阵区域左上角会显示它的用法。
 - 蓄力时法阵两侧是一本魔导书：左页“咏唱记录”把工具调用写成法术（寻踪术、洞察之眼、召唤仪式、召唤使魔……），右页“施法状态”显示咏唱时长、施法阶段与计数；两根与法阵同款的法阵柱随层数点亮，符文粒子向阵心汇聚，小猫使魔跟着吟唱、跑腿和欢呼。窗口 65 列起显示法阵柱与粒子，89 列起显示两页，109 列起显示参数与使魔。
 
 ## 安装
@@ -326,7 +326,7 @@ $(Get-InstallSnippet "copilot-v$($versions.copilot)" 'copilot')
 
 ## 验证
 
-真实 Copilot CLI 1.0.89 + 本地假模型服务（BYOK 离线，不消耗额度），在 Windows Terminal 与通用两种模式下：待机 5 行 → 施法 21 行且点阵随时间变大 → prompt 与中间回复环绕 → 出口 24 行 → 回到待机；输入 ``/ma`` 时法阵区域显示 ``/magic`` 用法提示、不改变区域高度、不产生模型请求；``/magic off``、``/magic 火``、``/magic list`` 的预览 / Esc / 数字选择，命令后多打空格或光标移回命令中间时输入框同样清空，窗口太矮时 ``/magic list`` 只提示不接管按键；鼠标点击 Copilot 标签页；``/exit`` 恢复终端并保留 Copilot 的退出摘要（含 ``--resume=``）；与直接运行 Copilot 相比，发给模型的系统提示与工具列表一致、输入框样式一致；``magicopilot workflow`` 直接透传；蓄力时两侧显示咏唱记录（fixture 的 ``glob`` 调用显示为“寻踪术 *.md”）、施法状态与使魔，出口时显示“神谕降临”；49 项单元测试（含 10 种法阵的占用区实测、宽度分级、无动画时静止、真实批处理文件的参数转义）。``--continue`` 与 ``/clear`` 后的会话跟随在 0.1.0（Copilot 1.0.87）上验证过，本版未改动这部分。**预发布**：尚未在人工操作的真实 Windows Terminal 窗口中验收。
+真实 Copilot CLI 1.0.89 + 本地假模型服务（BYOK 离线，不消耗额度），在 Windows Terminal 与通用两种模式下：待机 5 行 → 施法 21 行且点阵随时间变大 → prompt 与中间回复环绕 → 出口 24 行，实测保留 15.0 秒 → 1.6 秒内暗淡扩散（点阵约 1170 → 6）→ 回到待机；``/magic list`` 的随机项预览并选用后换成另一种法阵；输入 ``/ma`` 时法阵区域显示 ``/magic`` 用法提示、不改变区域高度、不产生模型请求；``/magic off``、``/magic 火``、``/magic list`` 的预览 / Esc / 数字选择，命令后多打空格或光标移回命令中间时输入框同样清空，窗口太矮时 ``/magic list`` 只提示不接管按键；鼠标点击 Copilot 标签页；``/exit`` 恢复终端并保留 Copilot 的退出摘要（含 ``--resume=``）；与直接运行 Copilot 相比，发给模型的系统提示与工具列表一致、输入框样式一致；``magicopilot workflow`` 直接透传；蓄力时两侧显示咏唱记录（fixture 的 ``glob`` 调用显示为“寻踪术 *.md”）、施法状态与使魔，出口时显示“神谕降临”；57 项单元测试（含 10 种法阵的占用区实测、宽度分级、无动画时静止、出口与消散时序、随机抽签、真实批处理文件的参数转义）。``--continue`` 与 ``/clear`` 后的会话跟随在 0.1.0（Copilot 1.0.87）上验证过，本版未改动这部分。**预发布**：尚未在人工操作的真实 Windows Terminal 窗口中验收。
 
 __FILES__
 "@

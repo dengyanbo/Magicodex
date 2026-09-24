@@ -16,6 +16,7 @@ use ratatui::Viewport;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 
+use crate::circle::style::MagicStyle;
 use crate::input::InputParser;
 use crate::input::Token;
 use crate::launch;
@@ -305,7 +306,8 @@ pub(crate) fn run(options: &Options) -> io::Result<i32> {
 
     let (mut cols, mut rows) = console.size();
     let now = Instant::now();
-    let magic = Magic::new(options.enabled, options.style, options.animations);
+    let mut magic = Magic::new(options.enabled, MagicStyle::Classic, options.animations);
+    magic.set_choice(options.style);
     let region = magic.region_rows(rows, now);
     let spawned = Pty::spawn(&command_line, None, &env, (cols, rows - region))?;
     let pty = spawned.pty;

@@ -417,8 +417,8 @@ pub(crate) enum AppEvent {
     /// Redraw after the `/magic list` highlight changed the shared style.
     MagicStylePreviewed,
 
-    /// Keep a magic circle style chosen in the `/magic list` picker and show the circle.
-    MagicStyleSelected(crate::magic_style::MagicStyle),
+    /// Keep a magic circle choice made in the `/magic list` picker and show the circle.
+    MagicStyleSelected(crate::magic_style::MagicChoice),
 
     /// Clear the current context, start a fresh session, and submit an initial user message.
     ///

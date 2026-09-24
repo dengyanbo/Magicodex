@@ -19,7 +19,7 @@ use crate::circle::styles::Clock;
 use crate::circle::styles::Frame;
 use crate::circle::styles::LAYER_TIMES;
 
-pub(crate) const USAGE: &str = "Usage: /magic on|off|list|<style>";
+pub(crate) const USAGE: &str = "Usage: /magic on|off|list|random|<style>";
 pub(crate) const CIRCLE_ROWS: u16 = 21;
 /// Rows below an outlet circle for the emission that leads into the answer.
 pub(crate) const OUTLET_ROWS: u16 = 3;

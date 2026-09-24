@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
 
+use crate::circle::style::Choice;
 use crate::circle::style::MagicStyle;
 use crate::pty::batch_command_line;
 use crate::pty::quote_arg;
@@ -16,11 +17,12 @@ magicopilot - GitHub Copilot CLI with the Magicodex magic circle
 Usage: magicopilot [wrapper options] [copilot options]
 
 Every option not listed here is passed to `copilot` unchanged. Inside a session,
-type /magic on | off | list | <style> in Copilot's input box.
+type /magic on | off | list | random | <style> in Copilot's input box.
 
 Wrapper options:
   --magic-style <style>   Start with this style (classic, wind, fire, water, thunder,
-                          earth, holy, dark, eerie, tech, or its Chinese name)
+                          earth, holy, dark, eerie, tech, or its Chinese name), or
+                          random for a different one every turn
   --magic-off             Start with the circle hidden (/magic on shows it)
   --magic-no-motion       Draw every layer at once, without motion
   --magic-copilot <path>  Run this Copilot CLI instead of the one on PATH
@@ -104,7 +106,7 @@ pub(crate) enum Action {
 #[derive(Debug)]
 pub(crate) struct Options {
     pub(crate) action: Action,
-    pub(crate) style: MagicStyle,
+    pub(crate) style: Choice,
     pub(crate) enabled: bool,
     pub(crate) animations: bool,
     pub(crate) copilot: Option<PathBuf>,
@@ -122,7 +124,7 @@ fn truthy(value: Option<OsString>) -> bool {
 pub(crate) fn parse(args: Vec<OsString>, env: impl Fn(&str) -> Option<OsString>) -> Options {
     let mut options = Options {
         action: Action::Wrap,
-        style: MagicStyle::Classic,
+        style: Choice::Style(MagicStyle::Classic),
         enabled: !truthy(env("MAGICOPILOT_OFF")),
         animations: !truthy(env("MAGICOPILOT_NO_MOTION")),
         copilot: env("MAGICOPILOT_COPILOT").map(PathBuf::from),
@@ -130,7 +132,7 @@ pub(crate) fn parse(args: Vec<OsString>, env: impl Fn(&str) -> Option<OsString>)
         error: None,
     };
     if let Some(style) = env("MAGICOPILOT_STYLE") {
-        match MagicStyle::parse(&style.to_string_lossy()) {
+        match Choice::parse(&style.to_string_lossy()) {
             Some(style) => options.style = style,
             None => options.error = Some(format!("unknown MAGICOPILOT_STYLE: {style:?}")),
         }
@@ -154,7 +156,7 @@ pub(crate) fn parse(args: Vec<OsString>, env: impl Fn(&str) -> Option<OsString>)
             "--magic-version" => options.action = Action::Version,
             "--magic-off" => options.enabled = false,
             "--magic-no-motion" => options.animations = false,
-            "--magic-style" => match value().as_deref().and_then(MagicStyle::parse) {
+            "--magic-style" => match value().as_deref().and_then(Choice::parse) {
                 Some(style) => {
                     options.style = style;
                     options.enabled = true;
@@ -389,14 +391,19 @@ mod tests {
             "dir",
         ]);
         assert_eq!(parsed.action, Action::Wrap);
-        assert_eq!(parsed.style, MagicStyle::Fire);
+        assert_eq!(parsed.style, Choice::Style(MagicStyle::Fire));
         assert!(!parsed.animations);
         assert_eq!(
             parsed.args,
             ["--model", "gpt-5.4", "-C", "dir"].map(OsString::from)
         );
         let parsed = options(&["--magic-style=tech", "--magic-off"]);
-        assert_eq!((parsed.style, parsed.enabled), (MagicStyle::Tech, false));
+        assert_eq!(
+            (parsed.style, parsed.enabled),
+            (Choice::Style(MagicStyle::Tech), false)
+        );
+        assert_eq!(options(&["--magic-style", "Random"]).style, Choice::Random);
+        assert_eq!(options(&["--magic-style=随机"]).style, Choice::Random);
         assert!(options(&["--magic-style", "ice"]).error.is_some());
         assert!(options(&["--magic-bogus"]).error.is_some());
     }
@@ -431,7 +438,7 @@ mod tests {
             "MAGICOPILOT_NO_MOTION" => Some("1".into()),
             _ => None,
         });
-        assert_eq!(parsed.style, MagicStyle::Water);
+        assert_eq!(parsed.style, Choice::Style(MagicStyle::Water));
         assert!(!parsed.animations && parsed.enabled);
     }
 

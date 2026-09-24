@@ -93,9 +93,8 @@ pub(super) fn draw(
         band: motion
             .animated
             .then(|| height - (motion.spin * 7.0) % (height + 8.0)),
-        pulse: motion
-            .outlet
-            .is_some_and(|progress| (progress * 14.0).sin() > 0.3),
+        // The outlet pulses the lit pillars about once a second; without motion they stay lit.
+        pulse: motion.outlet.is_some() && motion.animated && (motion.spin * 5.4).sin() > 0.3,
     };
     match style {
         MagicStyle::Classic => classic(&mut pen),

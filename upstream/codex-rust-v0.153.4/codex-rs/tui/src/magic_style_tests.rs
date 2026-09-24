@@ -52,3 +52,65 @@ fn settings_are_shared_by_every_clone() {
         assert_eq!(settings.style(), style);
     }
 }
+
+#[test]
+fn the_random_choice_parses_and_draws_another_style() {
+    for text in ["random", "RANDOM", " Random ", "随机"] {
+        assert_eq!(
+            MagicChoice::parse(text),
+            Some(MagicChoice::Random),
+            "{text:?}"
+        );
+    }
+    assert_eq!(
+        MagicChoice::parse("火"),
+        Some(MagicChoice::Style(MagicStyle::Fire))
+    );
+    assert_eq!(MagicChoice::parse("rand"), None);
+    assert_eq!(MagicChoice::Random.label(), "random 随机");
+    for style in MagicStyle::ALL {
+        let others: HashSet<_> = (0..9).map(|roll| style.other(roll) as u8).collect();
+        assert_eq!(others.len(), 9, "{style:?} reaches every other style");
+        assert!(
+            !others.contains(&(style as u8)),
+            "{style:?} never draws itself"
+        );
+    }
+}
+
+#[test]
+fn a_random_choice_is_shared_rerolled_and_restored() {
+    let settings = MagicSettings::default();
+    let widget = settings.clone();
+    settings.set_choice(MagicChoice::Random);
+    assert_eq!(widget.choice(), MagicChoice::Random);
+    let drawn = widget.style();
+    assert_ne!(
+        drawn,
+        MagicStyle::Classic,
+        "turning random on draws another style"
+    );
+    settings.set_choice(MagicChoice::Random);
+    assert_eq!(
+        widget.style(),
+        drawn,
+        "choosing random again keeps the draw"
+    );
+    widget.reroll();
+    assert_ne!(settings.style(), drawn);
+    settings.restore(MagicStyle::Holy, /*random*/ false);
+    assert_eq!(widget.choice(), MagicChoice::Style(MagicStyle::Holy));
+    widget.reroll();
+    assert_eq!(
+        settings.style(),
+        MagicStyle::Holy,
+        "a chosen style never rerolls"
+    );
+    widget.preview_random();
+    assert!(settings.is_random() && settings.style() != MagicStyle::Holy);
+    settings.restore(MagicStyle::Holy, /*random*/ true);
+    assert_eq!(
+        (widget.choice(), widget.style()),
+        (MagicChoice::Random, MagicStyle::Holy)
+    );
+}

@@ -409,15 +409,26 @@ trust_level = "trusted"
                 terminal.submit("/magic off")
                 terminal.wait("Magic circle off · thunder 雷")
                 terminal.wait_extent(lambda size: size == (0, 0))
-                assert len(Fixture.primary_requests) == 3, "Magic commands reached inference"
+                # The random choice: a turn casts the style drawn for it, with its outlet as usual.
+                terminal.submit("/magic random")
+                terminal.wait("Magic circle on · random 随机")
+                terminal.wait_extent(lambda size: size[0] > 0)
+                terminal.submit(prompt)
+                terminal.wait("NATIVE_RESPONSE_4")
+                time.sleep(0.3)
+                outlet_above(terminal.text().splitlines(), "NATIVE_RESPONSE_4")
+                terminal.submit("/magic off")
+                terminal.wait("Magic circle off · random 随机")
+                terminal.wait_extent(lambda size: size == (0, 0))
+                assert len(Fixture.primary_requests) == 4, "Magic commands reached inference"
                 assert all(request["instructions"] == Fixture.primary_requests[0]["instructions"]
                            for request in Fixture.primary_requests), "Default instructions changed"
                 assert all("/magic " not in json.dumps(body) for body in Fixture.requests)
                 print(json.dumps({"native_commands": "passed", "growth": [idle, early, later],
-                                  "model_requests": 3, "default_instructions_unchanged": True,
+                                  "model_requests": 4, "default_instructions_unchanged": True,
                                   "style_picker_preview_cancel_select": True, "styled_outlet": "fire",
                                   "partial_and_complete_reply_below_outlet": True,
-                                  "stream_toggle_and_resize": True, "sides": True}))
+                                  "stream_toggle_and_resize": True, "sides": True, "random_turn": True}))
             finally:
                 Fixture.release_final.set()
                 terminal.close()

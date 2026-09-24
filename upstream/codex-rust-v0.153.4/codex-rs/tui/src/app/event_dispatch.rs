@@ -224,8 +224,8 @@ impl App {
             AppEvent::MagicStylePreviewed => {
                 tui.frame_requester().schedule_frame();
             }
-            AppEvent::MagicStyleSelected(style) => {
-                self.chat_widget.apply_magic_style(style);
+            AppEvent::MagicStyleSelected(choice) => {
+                self.chat_widget.apply_magic_choice(choice);
             }
             AppEvent::ClearUiAndSubmitUserMessage { text } => {
                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;

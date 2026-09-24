@@ -92,6 +92,16 @@ impl MagicStyle {
             .find(|style| style.id().eq_ignore_ascii_case(text) || style.name() == text)
     }
 
+    /// Another style than this one, picked by `roll`, a random number.
+    pub(crate) fn other(self, roll: u64) -> Self {
+        let count = Self::ALL.len() as u64;
+        let index = Self::ALL
+            .iter()
+            .position(|style| *style == self)
+            .unwrap_or(0) as u64;
+        Self::ALL[((index + 1 + roll % (count - 1)) % count) as usize]
+    }
+
     /// Elemental styles are an explicit opt-in, so they may use ANSI colours beyond Codex's
     /// magenta and cyan. They stay on the 16 ANSI colours so terminal themes still choose the
     /// shades; the default classic style keeps the Codex palette.
@@ -199,6 +209,35 @@ impl MagicStyle {
                 reply: fg(Color::Cyan),
                 glow: [fg(Color::Cyan), fg(Color::LightGreen).bold()],
             },
+        }
+    }
+}
+
+/// What `/magic <style>` asks for: one style, or a different one drawn for every turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Choice {
+    Style(MagicStyle),
+    Random,
+}
+
+impl Choice {
+    const RANDOM_ID: &str = "random";
+    const RANDOM_NAME: &str = "随机";
+    pub(crate) const RANDOM_DESCRIPTION: &str = "每个回合随机换一种法阵，不与上一回合重复";
+
+    /// Matches a style, or `random` (any case) and its Chinese name.
+    pub(crate) fn parse(text: &str) -> Option<Self> {
+        let text = text.trim();
+        if text.eq_ignore_ascii_case(Self::RANDOM_ID) || text == Self::RANDOM_NAME {
+            return Some(Self::Random);
+        }
+        MagicStyle::parse(text).map(Self::Style)
+    }
+
+    pub(crate) fn label(self) -> String {
+        match self {
+            Self::Style(style) => style.label(),
+            Self::Random => format!("{} {}", Self::RANDOM_ID, Self::RANDOM_NAME),
         }
     }
 }
