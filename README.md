@@ -43,7 +43,7 @@ The earliest version, a standalone frontend with its own interface, has been arc
 **Prerequisites**
 
 - Windows 10/11 x64; [Windows Terminal](https://aka.ms/terminal) is recommended.
-- copilot: GitHub Copilot CLI installed and signed in (`npm install -g @github/copilot`; verified on 1.0.87).
+- copilot: GitHub Copilot CLI installed and signed in (`npm install -g @github/copilot`; verified on 1.0.89).
 - codex: a Codex account (a ChatGPT account or an API key). You don't need to install the official Codex separately.
 - The repository is currently private, so downloading requires a signed-in [GitHub CLI](https://cli.github.com/) (`gh auth login`).
 
@@ -118,6 +118,8 @@ In either version, type these commands **in the input box** and press Enter:
 | `/magic <style>` | Switches directly, e.g. `/magic fire` or `/magic 火` |
 
 These commands are handled locally and never sent to the model. Settings only last for the current run and go back to the defaults when you restart. In Codex, don't pass `/magic on` as a command-line argument, or it will be sent to the model as a prompt.
+
+Copilot's own command list never shows `/magic`, because Copilot builds that list itself. So as you type `/` or the start of `/magic`, magicopilot shows its usage in the top-left corner of the circle area; just press Enter as usual.
 
 ## 10 magic circles
 
@@ -249,7 +251,7 @@ Building from source, the patch structure, testing and the full verification rec
 **准备**
 
 - Windows 10/11 x64，推荐使用 [Windows Terminal](https://aka.ms/terminal)。
-- copilot 版：已安装并登录 GitHub Copilot CLI（`npm install -g @github/copilot`，已在 1.0.87 上验证）。
+- copilot 版：已安装并登录 GitHub Copilot CLI（`npm install -g @github/copilot`，已在 1.0.89 上验证）。
 - codex 版：Codex 账号（ChatGPT 账号或 API key）；不需要另外安装官方 Codex。
 - 仓库目前是私有的，下载需要已登录的 [GitHub CLI](https://cli.github.com/)（`gh auth login`）。
 
@@ -324,6 +326,8 @@ magicopilot --magic-style 雷   # 以雷系法阵启动
 | `/magic <类型>` | 直接切换，例如 `/magic fire`、`/magic 火` |
 
 这些命令只在本机处理，不会发给模型。设置只在本次运行中有效，重新启动后恢复默认。在 Codex 里不要把 `/magic on` 写在命令行参数里，那样它会被当成发给模型的 prompt。
+
+Copilot 自己的命令列表里不会出现 `/magic`，因为那份列表由 Copilot 生成。所以输入 `/` 或 `/magic` 的开头时，magicopilot 会在法阵区域左上角显示它的用法，照常回车即可。
 
 ## 10 种法阵
 

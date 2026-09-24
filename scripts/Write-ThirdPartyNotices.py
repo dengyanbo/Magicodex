@@ -26,7 +26,8 @@ LICENSE_PREFIXES = ("license", "licence", "copying", "notice", "unlicense", "cop
 def metadata(manifest: Path, target: str) -> dict:
     env = dict(os.environ)
     env.setdefault("RUSTUP_TOOLCHAIN", "1.95.0-x86_64-pc-windows-msvc")
-    cargo = Path.home() / ".cargo" / "bin" / "cargo.exe"
+    cargo_home = Path(os.environ["CARGO_HOME"]) if os.environ.get("CARGO_HOME") else Path.home() / ".cargo"
+    cargo = cargo_home / "bin" / "cargo.exe"
     result = subprocess.run(
         [str(cargo), "metadata", "--format-version", "1", "--filter-platform", target,
          "--offline", "--manifest-path", str(manifest), *REGISTRY],

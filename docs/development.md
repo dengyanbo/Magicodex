@@ -310,7 +310,7 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
 | `screen.rs` | vt100 模拟 Copilot 的屏幕，把终端查询转交真实终端，跟踪同步输出、焦点、进度等状态 |
 | `input.rs` | 解析键盘、鼠标、粘贴，鼠标坐标按法阵高度平移 |
 | `session.rs` | 读取 `~/.copilot/session-state/<会话>/events.jsonl`，跟随会话切换 |
-| `magic.rs` | 法阵状态机、区域高度、`/magic` 命令与输入框识别、类型选择器 |
+| `magic.rs` | 法阵状态机、区域高度、`/magic` 命令与输入框识别、输入时的用法提示、类型选择器 |
 | `render.rs`、`circle\` | 合成画面；10 种法阵的绘制（与 Codex 补丁同源） |
 | `app.rs` | 主循环：子进程输出、输入、事件、限帧绘制、退出恢复 |
 
@@ -332,6 +332,15 @@ uv run --no-project --with pyte --with pywinpty --with psutil --with wcwidth --w
   - `--windows-terminal` 模拟 Windows Terminal 环境；
   - `--baseline` 另外直接运行一次 Copilot，对比发给模型的请求；
   - `--frames <目录>` 保存各阶段画面。
+
+### 验证记录（0.1.1）
+
+- 本版改动：输入 `/` 或 `/magic` 的开头时，法阵区域左上角显示 `/magic` 的用法（Copilot 自己的命令列表无法列出它）；`workflow` 子命令直接透传；构建时把用户目录映射为 `~`。
+- 端到端 `tests\copilot_terminal.py` 在 Copilot CLI 1.0.89-1 上通过，Windows Terminal 与通用两种模式（前者含 `--baseline` 对比）：除 0.1.0 的各项检查外，输入 `/ma` 时出现两行提示、法阵区域仍为 5 行、清空输入后提示消失，且没有产生模型请求。
+- 在伪终端中运行 `magicopilot workflow`：0.1.0 会画出法阵，随后被 Copilot 以 `unexpected argument '--session-id'` 拒绝；0.1.1 直接透传，Copilot 输出自己的用法说明。
+- 构建出的 `magicopilot.exe` 中本机用户目录路径为 0 处（0.1.0 的发布包为 52 处）。
+- 38 项单元测试通过；Clippy（`-D warnings`）无告警。
+- `--continue`、`/clear` 后的会话跟随没有重新验证（0.1.0 在 Copilot 1.0.87 上验证过，这部分代码未改动）。
 
 ### 验证记录（0.1.0）
 

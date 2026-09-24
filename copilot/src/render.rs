@@ -193,13 +193,20 @@ pub(crate) fn region(magic: &Magic, area: Rect, buf: &mut Buffer, now: Instant) 
         }
         .render_at(area, buf, now);
     }
-    if let Some(text) = magic.toast(now)
+    if let Some(text) = magic.notice(now)
         && magic.picker.is_none()
     {
         let dim = Style::new().add_modifier(Modifier::DIM);
         let limit = area.x + area.width;
-        let used = put(buf, area.x + 1, area.y, "• ", limit, dim);
-        put(buf, area.x + 1 + used, area.y, text, limit, Style::new());
+        for (row, line) in (area.y..area.y + area.height).zip(text.lines()) {
+            let (bullet, style) = if row == area.y {
+                ("• ", Style::new())
+            } else {
+                ("  ", dim)
+            };
+            let used = put(buf, area.x + 1, row, bullet, limit, dim);
+            put(buf, area.x + 1 + used, row, line, limit, style);
+        }
     }
 }
 
@@ -270,5 +277,29 @@ mod tests {
             .filter(|c| ('\u{2801}'..='\u{28ff}').contains(c))
             .count();
         assert!(braille > 100, "preview circle:\n{rows}");
+    }
+
+    #[test]
+    fn the_command_hint_sits_beside_the_idle_emblem() {
+        let area = Rect::new(0, 0, 120, 5);
+        let now = Instant::now();
+        let mut plain = Buffer::empty(area);
+        let mut magic = Magic::new(true, MagicStyle::Classic, true);
+        region(&magic, area, &mut plain, now);
+        let mut buf = Buffer::empty(area);
+        magic.set_command_hint(true);
+        region(&magic, area, &mut buf, now);
+        let rows = text(&buf);
+        assert!(
+            rows[0].starts_with(" • /magic on|off|list|<类型>"),
+            "{rows:?}"
+        );
+        assert!(rows[1].starts_with("   magicopilot 的命令"), "{rows:?}");
+        assert!(buf[(3, 1)].modifier.contains(Modifier::DIM));
+        for y in 0..area.height {
+            for x in 55..area.width {
+                assert_eq!(buf[(x, y)], plain[(x, y)], "emblem cell ({x}, {y})");
+            }
+        }
     }
 }

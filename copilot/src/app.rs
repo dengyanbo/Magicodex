@@ -23,6 +23,7 @@ use crate::launch::Options;
 use crate::magic::Magic;
 use crate::magic::PickerKey;
 use crate::magic::typed_command;
+use crate::magic::typing_command;
 use crate::pty::Console;
 use crate::pty::Pty;
 use crate::render;
@@ -177,20 +178,35 @@ impl Session {
         self.dirty = true;
     }
 
-    /// Checks Copilot's input box when Enter is pressed; runs `/magic ...` locally.
-    fn intercept_enter(&mut self, now: Instant) -> bool {
+    /// Copilot's input row with the rows around it, and the cursor's index in that row.
+    fn input_rows(&self) -> Option<(String, String, String, usize)> {
         let screen = self.child.screen();
         if !screen.alternate_screen() {
-            return false;
+            return None;
         }
         let (row, col) = screen.cursor_position();
         if row == 0 {
-            return false;
+            return None;
         }
-        let above = self.child.row_text(row - 1);
-        let line = self.child.row_text(row);
-        let below = self.child.row_text(row + 1);
-        let caret = self.child.char_index(row, col);
+        Some((
+            self.child.row_text(row - 1),
+            self.child.row_text(row),
+            self.child.row_text(row + 1),
+            self.child.char_index(row, col),
+        ))
+    }
+
+    /// Whether Copilot's input box holds the start of a `/magic` command.
+    fn typing_magic(&self) -> bool {
+        self.input_rows()
+            .is_some_and(|(above, line, below, caret)| typing_command(&above, &line, &below, caret))
+    }
+
+    /// Checks Copilot's input box when Enter is pressed; runs `/magic ...` locally.
+    fn intercept_enter(&mut self, now: Instant) -> bool {
+        let Some((above, line, below, caret)) = self.input_rows() else {
+            return false;
+        };
         let Some((args, count)) = typed_command(&above, &line, &below, caret) else {
             return false;
         };
@@ -494,6 +510,9 @@ pub(crate) fn run(options: &Options) -> io::Result<i32> {
             state.magic.animating(now) && now.duration_since(last_draw) >= FRAME
         };
         if due && !waiting_for_sync {
+            // Copilot's command list, open while a command is typed, cannot show `/magic`.
+            let typing = state.typing_magic();
+            state.magic.set_command_hint(typing);
             let magic = &state.magic;
             let child = &state.child;
             let region = state.region;

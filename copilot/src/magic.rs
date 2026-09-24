@@ -20,6 +20,10 @@ const OUTLET_TIME: Duration = Duration::from_millis(2600);
 const FINAL_GRACE: Duration = Duration::from_millis(1200);
 const TOAST_TIME: Duration = Duration::from_millis(3500);
 const TOO_SHORT: &str = "窗口太矮，放不下样式列表 · 可直接输入 /magic <类型>";
+/// Shown while `/magic` is typed: Copilot's command list, which opens at the same time, only
+/// lists Copilot's own commands.
+const COMMAND_HINT: &str =
+    "/magic on|off|list|<类型>\nmagicopilot 的命令，Copilot 列表里没有，回车即可";
 
 /// Whether a terminal `rows` tall has room for the style picker above Copilot.
 fn picker_fits(rows: u16) -> bool {
@@ -58,6 +62,7 @@ pub(crate) struct Magic {
     pub(crate) phase: Phase,
     pub(crate) picker: Option<Picker>,
     toast: Option<(String, Instant)>,
+    command_hint: bool,
     last_reply: Option<(String, bool)>,
     finish_at: Option<Instant>,
     attention: bool,
@@ -74,6 +79,7 @@ impl Magic {
             phase: Phase::Idle,
             picker: None,
             toast: None,
+            command_hint: false,
             last_reply: None,
             finish_at: None,
             attention: false,
@@ -96,6 +102,20 @@ impl Magic {
 
     fn say(&mut self, text: String, now: Instant) {
         self.toast = Some((text, now + TOAST_TIME));
+    }
+
+    /// Shows the usage of `/magic` while the input box holds the start of it.
+    pub(crate) fn set_command_hint(&mut self, typing: bool) {
+        self.command_hint = typing;
+    }
+
+    /// The text at the top of the region: the command hint while the circle is shown, or else
+    /// a toast. Lines after the first explain it.
+    pub(crate) fn notice(&self, now: Instant) -> Option<&str> {
+        if self.command_hint && self.enabled && self.picker.is_none() {
+            return Some(COMMAND_HINT);
+        }
+        self.toast(now)
     }
 
     /// The notice shown when the wrapper starts with the circle on.
@@ -317,18 +337,12 @@ impl Magic {
     }
 }
 
-/// Recognises `/magic ...` typed into Copilot's single-line input box.
+/// Copilot's single-line input box on the cursor's row: where the text after its prompt marker
+/// starts in `line`, and that text.
 ///
 /// Copilot 1.0 draws its input either as `┃ text` between `╻▄▄▄` and `╹▀▀▀` edges, or as
-/// `❯ text` between two `────` rules, depending on the terminal. `caret` is the cursor's
-/// character index in `line`. Returns the arguments and the number of characters to erase,
-/// which includes spaces typed after the command when the cursor is behind them.
-pub(crate) fn typed_command(
-    above: &str,
-    line: &str,
-    below: &str,
-    caret: usize,
-) -> Option<(String, usize)> {
+/// `❯ text` between two `────` rules, depending on the terminal.
+fn input_box<'a>(above: &str, line: &'a str, below: &str) -> Option<(usize, &'a str)> {
     fn is_edge(row: &str) -> bool {
         let row = row.trim();
         !row.is_empty() && row.chars().all(|c| "─━═▄▀▔▁╻╹╭╮╰╯┌┐└┘".contains(c))
@@ -340,7 +354,19 @@ pub(crate) fn typed_command(
         .trim_start()
         .strip_prefix(['┃', '❯', '›', '>', '│'])?
         .trim_start();
-    let start = line.chars().count() - body.chars().count();
+    Some((line.chars().count() - body.chars().count(), body))
+}
+
+/// Recognises `/magic ...` typed into Copilot's input box. `caret` is the cursor's character
+/// index in `line`. Returns the arguments and the number of characters to erase, which
+/// includes spaces typed after the command when the cursor is behind them.
+pub(crate) fn typed_command(
+    above: &str,
+    line: &str,
+    below: &str,
+    caret: usize,
+) -> Option<(String, usize)> {
+    let (start, body) = input_box(above, line, below)?;
     let text = body.trim_end();
     let rest = text.strip_prefix("/magic")?;
     if !(rest.is_empty() || rest.starts_with(' ')) || rest.trim().contains(char::is_whitespace) {
@@ -349,6 +375,17 @@ pub(crate) fn typed_command(
     // The padding after the text looks like typed spaces; only the cursor tells them apart.
     let typed = text.chars().count().max(caret.saturating_sub(start));
     Some((rest.trim().to_string(), typed))
+}
+
+/// Whether the text before the cursor in Copilot's input box can still become `/magic`: `/`,
+/// `/ma`, `/magic li`, ... Text after the cursor is ignored: Copilot previews the highlighted
+/// entry of its command list there.
+pub(crate) fn typing_command(above: &str, line: &str, below: &str, caret: usize) -> bool {
+    let Some((start, body)) = input_box(above, line, below) else {
+        return false;
+    };
+    let typed: String = body.chars().take(caret.saturating_sub(start)).collect();
+    typed.starts_with('/') && ("/magic".starts_with(typed.as_str()) || typed.starts_with("/magic "))
 }
 
 #[cfg(test)]
@@ -560,5 +597,42 @@ mod tests {
             typed_command(top, "┃ /magic off     ", bottom, 5),
             Some(("off".into(), 10))
         );
+    }
+
+    #[test]
+    fn the_start_of_the_command_is_recognised_while_typing() {
+        let (top, bottom) = ("╻▄▄▄▄▄▄", "╹▀▀▀▀▀▀");
+        let typing = |line: &str, caret: usize| typing_command(top, line, bottom, caret);
+        // After `/`, Copilot previews the highlighted command behind the cursor.
+        assert!(typing("┃ /add-dir", 3));
+        assert!(typing("┃ /ma", 5));
+        assert!(typing("┃ /magic", 8));
+        assert!(typing("┃ /magic li   ", 11));
+        assert!(!typing("┃ /model", 8));
+        assert!(!typing("┃ /magical", 10));
+        assert!(!typing("┃ tell me /ma", 13));
+        assert!(!typing("┃ ", 2));
+        assert!(!typing_command("┃ first line", "┃ /ma", bottom, 5));
+        let rule = "────────────────";
+        assert!(typing_command(rule, "❯ /mag", rule, 6));
+    }
+
+    #[test]
+    fn the_command_hint_shows_while_the_circle_is_visible() {
+        let now = Instant::now();
+        let mut magic = Magic::new(true, MagicStyle::Classic, true);
+        magic.set_command_hint(true);
+        assert_eq!(magic.notice(now), Some(COMMAND_HINT));
+        assert_eq!(magic.region_rows(40, now), IDLE_ROWS, "no extra rows");
+        magic.command("off", 40, now);
+        assert_eq!(
+            magic.notice(now),
+            magic.toast(now),
+            "a hidden circle shows only its own notices"
+        );
+        assert_eq!(magic.region_rows(40, now + TOAST_TIME), 0);
+        magic.command("on", 40, now);
+        magic.set_command_hint(false);
+        assert_eq!(magic.notice(now), magic.toast(now));
     }
 }

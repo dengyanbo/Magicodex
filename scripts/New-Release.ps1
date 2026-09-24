@@ -194,7 +194,7 @@ function New-CopilotPackage([string]$Stage, [string]$Version) {
         variant = 'copilot'
         version = $Version
         description = 'GitHub Copilot CLI with the Magicodex magic circle (wrapper around the installed, unmodified Copilot CLI)'
-        requires = 'GitHub Copilot CLI installed and signed in (tested with 1.0.87); Windows 10 1809 or later'
+        requires = 'GitHub Copilot CLI installed and signed in (tested with 1.0.89); Windows 10 1809 or later'
         commands = [ordered]@{ 'magicopilot' = 'magicopilot.exe' }
     })
 }
@@ -291,7 +291,7 @@ __FILES__
 
 - 输入前是小法阵；提交后法阵变大，并随等待时间越来越大、越来越复杂，直到第一次回复。
 - prompt 与中间回复（不含 reasoning）环绕法阵；最终回复时法阵定格、光从阵心向下释放，Copilot 的回答出现在法阵下方，随后法阵缩回待机大小。
-- 在 Copilot 输入框里输入 ``/magic list``（预览选择 10 种法阵）、``/magic on``、``/magic off``、``/magic 火``；这些命令由外壳截获，不会发给模型。
+- 在 Copilot 输入框里输入 ``/magic list``（预览选择 10 种法阵）、``/magic on``、``/magic off``、``/magic 火``；这些命令由外壳截获，不会发给模型。Copilot 自己的命令列表里没有 ``/magic``，输入 ``/`` 或 ``/magic`` 的开头时，法阵区域左上角会显示它的用法。
 
 ## 安装
 
@@ -300,7 +300,7 @@ $(Get-InstallSnippet "copilot-v$($versions.copilot)" 'copilot')
 ## 要求
 
 - Windows 10 1809 或更高版本，x64；推荐 Windows Terminal
-- 已安装并登录 GitHub Copilot CLI（验证于 1.0.87）
+- 已安装并登录 GitHub Copilot CLI（验证于 1.0.89）
 
 ## 工作方式与限制
 
@@ -308,7 +308,7 @@ $(Get-InstallSnippet "copilot-v$($versions.copilot)" 'copilot')
 
 ## 验证
 
-真实 Copilot CLI 1.0.87 + 本地假模型服务（BYOK 离线，不消耗额度），在 Windows Terminal 与通用两种模式下：待机 5 行 → 施法 21 行且点阵随时间变大 → prompt 与中间回复环绕 → 出口 24 行 → 回到待机；``/magic off``、``/magic 火``、``/magic list`` 的预览 / Esc / 数字选择，命令后多打空格或光标移回命令中间时输入框同样清空，窗口太矮时 ``/magic list`` 只提示不接管按键；鼠标点击 Copilot 标签页；``/exit`` 恢复终端并保留 Copilot 的退出摘要（含 ``--resume=``）；``--continue`` 恢复会话与 ``/clear`` 新会话后法阵继续跟随；与直接运行 Copilot 相比，发给模型的系统提示与工具列表一致、输入框样式一致；35 项单元测试（含真实批处理文件的参数转义）。**预发布**：尚未在人工操作的真实 Windows Terminal 窗口中验收。
+真实 Copilot CLI 1.0.89 + 本地假模型服务（BYOK 离线，不消耗额度），在 Windows Terminal 与通用两种模式下：待机 5 行 → 施法 21 行且点阵随时间变大 → prompt 与中间回复环绕 → 出口 24 行 → 回到待机；输入 ``/ma`` 时法阵区域显示 ``/magic`` 用法提示、不改变区域高度、不产生模型请求；``/magic off``、``/magic 火``、``/magic list`` 的预览 / Esc / 数字选择，命令后多打空格或光标移回命令中间时输入框同样清空，窗口太矮时 ``/magic list`` 只提示不接管按键；鼠标点击 Copilot 标签页；``/exit`` 恢复终端并保留 Copilot 的退出摘要（含 ``--resume=``）；与直接运行 Copilot 相比，发给模型的系统提示与工具列表一致、输入框样式一致；``magicopilot workflow`` 直接透传；38 项单元测试（含真实批处理文件的参数转义）。``--continue`` 与 ``/clear`` 后的会话跟随在 0.1.0（Copilot 1.0.87）上验证过，本版未改动这部分。**预发布**：尚未在人工操作的真实 Windows Terminal 窗口中验收。
 
 __FILES__
 "@

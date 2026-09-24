@@ -14,7 +14,7 @@ Copilot CLI 自己的界面、快捷键、默认 prompt、斜杠命令、会话�
 ## 前提
 
 - Windows 10 1809 及以上，x64；推荐 Windows Terminal（其他支持 VT 的控制台也可以）。
-- 已安装并登录 GitHub Copilot CLI（`npm install -g @github/copilot`，或其他官方安装方式），`copilot` 在 PATH 中；也可以用 `--magic-copilot <路径>` 指定。已在 Copilot CLI 1.0.87 上验证。
+- 已安装并登录 GitHub Copilot CLI（`npm install -g @github/copilot`，或其他官方安装方式），`copilot` 在 PATH 中；也可以用 `--magic-copilot <路径>` 指定。已在 Copilot CLI 1.0.89 上验证。
 
 ## 安装
 
@@ -37,6 +37,8 @@ magicopilot --magic-help           # 外壳自己的参数
 | `/magic list`（或只输入 `/magic`） | 在法阵区域打开类型选择器：↑↓ 或 j/k 移动并实时预览，Enter 选用，1–9/0 直接选，Esc/q 取消 |
 | `/magic on` / `/magic off` | 显示 / 隐藏法阵；隐藏后 Copilot 恢复全屏高度 |
 | `/magic <类型>` | 直接切换，例如 `/magic fire`、`/magic 火` |
+
+Copilot 自己的命令列表里不会出现 `/magic`：那份列表由 Copilot 生成，外壳加不进去。所以在输入框里输入 `/` 或 `/magic` 的开头时，法阵区域左上角会显示 `/magic` 的用法，照常回车即可。
 
 这些命令只在本机处理：不会发给模型，也不会留在 Copilot 的输入框里（命令后多打的空格、光标移回命令中间的情况也会清干净）。窗口太矮（低于 19 行）放不下选择器时，`/magic list` 只显示提示，可以改用 `/magic <类型>`；选择器打开后窗口被缩到这个高度以下，会自动取消并还原预览。设置只在本次运行中有效；想要默认值，可以用启动参数或环境变量：
 
@@ -68,7 +70,7 @@ magicopilot --magic-help           # 外壳自己的参数
 
 - 法阵在顶部：待机 5 行，施法时 21 行，最终回复时 24 行，Copilot 至少保留 14 行。窗口低于 19 行时法阵自动隐藏；Copilot 请求权限确认时法阵缩回待机大小，把空间让给确认界面。
 - 超链接（OSC 8）和终端图片协议不转发；Copilot 的其他显示照常。
-- `/magic` 截获依赖 Copilot 输入框的外观（目前识别两种样式）。Copilot 改版后如果识别失败，这行命令会原样交给 Copilot，只会得到“Unknown command”，不会发给模型。
+- `/magic` 截获和上面的用法提示都依赖 Copilot 输入框的外观（目前识别两种样式）。Copilot 改版后如果识别失败，提示不再出现，这行命令会原样交给 Copilot，只会得到“Unknown command”，不会发给模型。
 - 会话事件格式属于 Copilot 的内部实现。格式变化时法阵会退化为只显示待机图案，不影响 Copilot 本身。
 - 只支持 Windows。
 

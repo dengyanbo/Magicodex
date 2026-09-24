@@ -360,6 +360,19 @@ def main():
             results["input_style"] = input_style(rows)
             frames.append(("01-idle", "待机：Copilot CLI 上方的小法阵", term.cells()))
 
+            # Copilot's command list cannot show /magic; the region names it while it is typed.
+            before = len(Fixture.requests)
+            term.type("/ma")
+            rows = term.wait(lambda r: r[0].strip().startswith("• /magic on|off|list")
+                             and "magicopilot 的命令" in r[1], timeout=5, what="/magic hint while typing")
+            assert tab_row(rows) == 5, "the hint needs no extra rows"
+            frames.append(("02-command-hint", "输入 /ma：提示 /magic 的用法", term.cells()))
+            term.process.write("\x7f" * 3)
+            rows = term.wait(lambda r: "/magic on|off|list" not in r[0] and input_line(r) == "", timeout=5,
+                             what="hint gone with the input cleared")
+            assert len(Fixture.requests) == before, "typing /ma reached the model"
+            results["command_hint"] = True
+
             started, early, later, rows = run_turn(term, frames, "turn")
             assert tab_row(early) == 21 and tab_row(later) == 21, (tab_row(early), tab_row(later))
             grow = (len(braille_rows(early)), len(braille_rows(later)))
