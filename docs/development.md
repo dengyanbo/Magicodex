@@ -23,7 +23,7 @@
 
 ## 发布
 
-每个版本是一个独立的 GitHub Release：`codex-v*`、`copilot-v*`（已归档的独立前端为 `standalone-v*`）。每个 Release 附 zip、`SHA256SUMS.txt` 和同一份 `install.ps1`。
+每个版本是一个独立的 GitHub Release：`codex-v*`、`copilot-v*`。每个 Release 附 zip、`SHA256SUMS.txt` 和同一份 `install.ps1`。旧版本的 Release 已删除（其中早期发布包含原作者的用户目录），Git 标签仍然保留。
 
 ```powershell
 pwsh -File scripts\New-Release.ps1                    # 在 dist\<标签>\ 生成两个版本的包与发布说明，不上传
@@ -274,7 +274,7 @@ python .\scripts\Export-NativePatch.py --archive .\upstream\codex-rust-v0.153.4.
   - 蓄力约 5 秒时，左侧有“咏唱记录 / 静候咒文”，右侧有“施法状态”、`T+` 与使魔，两侧都有法阵柱与粒子的点阵；
   - 回复完成后，对话记录中定格的出口不带两侧内容。
 - 用真实程序按 Windows Terminal 策略渲染了 classic、fire、tech、eerie 的完整流程（120×40）并逐张审查：两侧只在蓄力时出现；classic 只用 magenta/cyan 与默认前景；中间回复计入神谕；出口定格后两侧消失。fixture 不调用工具，左页只有占位文字，法术条目由上面的单元测试覆盖。
-- 发现并修复：`--remap-path-prefix` 只作用于 rustc。首次构建的 `codex.exe` 中，aws-lc、liblzma、tree-sitter 断言里的 `__FILE__` 仍含本机用户目录（ASCII 83 处、UTF-16 75 处）。`Build-Native.ps1` 改为同时经 `CL` 环境变量传入 MSVC 的 `/d1trimfile:`，`New-Release.ps1` 打包时扫描二进制，发现用户目录即中止。最初试过用 `CFLAGS` 传入，结果 aws-lc 的编译器探测误判 `__builtin_bswap` 可用，链接失败（cc crate 在设置了 `CFLAGS` 时不加默认警告级别），因此改用 `CL`。重新构建后为 0 处（ASCII 与 UTF-16 编码均无本机用户名）。magicopilot 不含这类 C 代码，已发布的 0.1.1、0.2.0 均为 0 处。
+- 发现并修复：`--remap-path-prefix` 只作用于 rustc。首次构建的 `codex.exe` 中，aws-lc、liblzma、tree-sitter 断言里的 `__FILE__` 仍含本机用户目录（ASCII 83 处、UTF-16 75 处）。`Build-Native.ps1` 改为同时经 `CL` 环境变量传入 MSVC 的 `/d1trimfile:`，`New-Release.ps1` 打包时扫描二进制，发现用户目录即中止。最初试过用 `CFLAGS` 传入，结果 aws-lc 的编译器探测误判 `__builtin_bswap` 可用，链接失败（cc crate 在设置了 `CFLAGS` 时不加默认警告级别），因此改用 `CL`。重新构建后为 0 处（ASCII 与 UTF-16 编码均无本机用户名）。magicopilot 不含这类 C 代码，此前发布的 0.1.1、0.2.0 均为 0 处。
 - 六阶段补丁：0001–0005 重新导出后逐字节不变，新增 0006（14 个文件）；950 个原提示、输入与键位相关文件保持不变。从原始 ZIP 依次重放六个阶段后，manifest 中 101 个文件及全部 1754 个 TUI 文件与源码逐字节一致。
 - `Publish-Native.ps1` 通过本机 `~/.codex/copilot-proxy` 桥接设置定位官方 `codex-code-mode-host.exe`，本机没有这份设置，因此按脚本的相同步骤手动发布：`codex-code-mode-host.exe` 取自官方 npm 包 `@openai/codex-win32-x64@0.153.4-win32-x64`（OpenAI 签名有效）。
 - 发布的 `native\codex.exe` SHA256 为 `7CE0821EF1DD265EE8EC6DE83429B70EFCB415BD4F0FA946BA64CFF5361900BD`，上述 ConPTY 验收在这个最终构建上重新运行过。本轮只用本地 fixture，没有调用真实模型。
@@ -426,4 +426,4 @@ uv run --no-project --with pyte --with pywinpty --with psutil --with wcwidth --w
 
 ## 独立前端（standalone，已归档）
 
-最早的版本：通过 Codex app-server 连接 Codex，自绘整套界面。已归档，不再构建或发布；代码、构建脚本（`scripts\Build.ps1`）、测试与说明（`README-standalone.md`）保存在 [`archive/standalone`](https://github.com/dengyanbo/Magicodex/tree/archive/standalone) 分支，最后的发布是 `standalone-v0.1.0`。
+最早的版本：通过 Codex app-server 连接 Codex，自绘整套界面。已归档，不再构建或发布；代码、构建脚本（`scripts\Build.ps1`）、测试与说明（`README-standalone.md`）保存在 [`archive/standalone`](https://github.com/dengyanbo/Magicodex/tree/archive/standalone) 分支。它的发布 `standalone-v0.1.0` 已删除，只保留 Git 标签。
